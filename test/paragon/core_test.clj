@@ -26,6 +26,8 @@
         jg-contract-c (contract jg :c)
         jg-contract-d (contract jg :d)]
     (is (check-axioms-debug jg))
+    (is (empty? (unbelieved jg)))
+    (is (= #{:a :b :c :d} (set (believed jg))))
     (is (check-axioms-debug jg-contract-strokeA))
     (is (= :white (jgcolor jg-contract-strokeA :strokeA)))
     (is (check-axioms-debug jg-contract-strokeB))
@@ -67,6 +69,8 @@
         jg-expand-c (expand jg :c)
         jg-expand-d (expand jg :d)]
     (is (check-axioms-debug jg))
+    (is (empty? (believed jg)))
+    (is (= #{:a :b :c :d} (set (unbelieved jg))))
     (is (check-axioms-debug jg-expand-strokeA))
     (is (= :black (jgcolor jg-expand-strokeA :strokeA)))
     (is (= :black (jgcolor jg-expand-strokeA :a)))

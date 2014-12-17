@@ -26,6 +26,16 @@
   [jg stroke-or-node]
   (get-in jg [:types stroke-or-node]))
 
+(defn believed
+  "Returns black nodes."
+  [jg]
+  (filter (fn [n] (= :black (jgcolor jg n))) (nodes jg)))
+
+(defn unbelieved
+  "Returns white nodes."
+  [jg]
+  (filter (fn [n] (= :white (jgcolor jg n))) (nodes jg)))
+
 (defn visualize
   [jg]
   (graphio/view (:graph jg) :node {:fillcolor :white :style :filled}))
