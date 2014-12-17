@@ -1,4 +1,5 @@
 (ns paragon.core
+  (:require [clojure.string :as str])
   (:require [loom.graph :as graph])
   (:require [loom.alg :as graphalg])
   (:require [loom.attr :as graphattr])
@@ -142,6 +143,12 @@
                                  (graph/incoming (:graph jg) stroke))))
           (strokes jg)))
 
+(defn check-axiom-coloration-bottom
+  "Extra axiom: Ensure :sbottom and :nbottom (stroke and node) are white."
+  [jg]
+  (and (= :white (jgcolor jg :sbottom))
+       (= :white (jgcolor jg :nbottom))))
+
 (defn check-axioms
   [jg]
   (and (check-axiom-neg1 jg)
@@ -156,7 +163,8 @@
        (check-axiom-coloration-1 jg)
        (check-axiom-coloration-2 jg)
        (check-axiom-coloration-3 jg)
-       (check-axiom-coloration-4 jg)))
+       (check-axiom-coloration-4 jg)
+       (check-axiom-coloration-bottom jg)))
 
 (defn check-axioms-debug
   [jg]
@@ -172,7 +180,8 @@
        (or (check-axiom-coloration-1 jg) (println "Fails Axiom of Coloration 1."))
        (or (check-axiom-coloration-2 jg) (println "Fails Axiom of Coloration 2."))
        (or (check-axiom-coloration-3 jg) (println "Fails Axiom of Coloration 3."))
-       (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))))
+       (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))
+       (or (check-axiom-coloration-bottom jg) (println "Fails Axiom of Coloration - Bottom."))))
 
 (defn premise
   [jg stroke node]
@@ -203,6 +212,36 @@
       (assoc-in [:coloring stroke-or-node] color)
       (update-in [:graph] graphattr/add-attr stroke-or-node :fillcolor color)
       (update-in [:graph] graphattr/add-attr stroke-or-node :fontcolor (if (= :black color) :white :black))))
+
+(defn add-inconsistencies
+  "Indicate sets of nodes where, for each set, not all the nodes can be black simultaneously.
+
+  Usage example: (add-inconsistencies jg [:node1 :node2 :node3] [:node4 :node5])"
+  [jg & node-sets]
+  (let [jg-universal-bottom (-> jg
+                                (assoc-in [:types :sbottom] :stroke)
+                                (assoc-in [:types :nbottom] :node)
+                                (update-in [:graph] graphattr/add-attr :sbottom :shape :underline)
+                                (assert-color :sbottom :white)
+                                (assert-color :nbottom :white)
+                                (update-in [:graph] graph/add-edges [:sbottom :nbottom]))]
+    (reduce (fn [jg2 node-set]
+              (let [nodes-str (str/join "-" (map (fn [n] (if (keyword? n) (name n) (str n))) node-set))
+                    bottom-set-stroke (format ":sb-%s" nodes-str)
+                    bottom-set-node (format ":nb-%s" nodes-str)]
+                (reduce (fn [jg3 node]
+                          (-> jg3
+                              (assoc-in [:types node] :node)
+                              (update-in [:graph] graph/add-edges [node bottom-set-stroke])))
+                        (-> jg2
+                            (assoc-in [:types bottom-set-stroke] :stroke)
+                            (assoc-in [:types bottom-set-node] :node)
+                            (update-in [:graph] graphattr/add-attr bottom-set-stroke :shape :underline)
+                            (assert-color bottom-set-stroke :white)
+                            (assert-color bottom-set-node :white)
+                            (update-in [:graph] graph/add-edges [bottom-set-stroke bottom-set-node] [bottom-set-node :sbottom]))
+                        node-set)))
+            jg-universal-bottom node-sets)))
 
 (defn spread-white
   [jg]
@@ -238,7 +277,8 @@
     jg
     ;; something to do (inconsistent), spread black
     ;; first case: a stroke is white but has all black incoming nodes; or, it points to a black node; turn it black
-    (if-let [bad-stroke (first (filter (fn [s] (and (= :white (jgcolor jg s))
+    (if-let [bad-stroke (first (filter (fn [s] (and (not= :sbottom s)
+                                                    (= :white (jgcolor jg s))
                                                     (or (and (not-empty (graph/incoming (:graph jg) s))
                                                              (every? (fn [n] (= :black (jgcolor jg n)))
                                                                      (graph/incoming (:graph jg) s)))
@@ -246,7 +286,8 @@
                                        (strokes jg)))]
       (recur (assert-color jg bad-stroke :black))
       ;; second case: a node is white but has all black incoming strokes; or, one of its outgoing strokes is black; turn it black
-      (if-let [bad-node (first (filter (fn [n] (and (= :white (jgcolor jg n))
+      (if-let [bad-node (first (filter (fn [n] (and (not= :nbottom n)
+                                                    (= :white (jgcolor jg n))
                                                     (or (every? (fn [s] (= :black (jgcolor jg s)))
                                                                 (graph/incoming (:graph jg) n))
                                                         (some (fn [s] (= :black (jgcolor jg s))) (graph/neighbors (:graph jg) n)))))
@@ -256,10 +297,14 @@
 
 (defn expand
   [jg node]
-  (-> jg (assert-color node :black)
-      (spread-black)))
+  (let [jg2 (-> jg (assert-color node :black)
+                (spread-black))]
+    ;; if it didn't work out (no way to spread-black consistently, return nil
+    (if-not (check-axioms jg2) nil jg2)))
 
 (defn contract
   [jg node]
-  (-> jg (assert-color node :white)
-      (spread-white)))
+  (let [jg2 (-> jg (assert-color node :white)
+                (spread-white))]
+    ;; if it didn't work out (no way to spread-white consistently, return nil
+    (if-not (check-axioms jg2) nil jg2)))
