@@ -271,15 +271,14 @@
                                                             (graph/incoming (:graph jg) n))))
                                        (nodes jg)))]
         (recur (assert-color jg bad-node :white))
-        ;; non-deterministic case: a stroke is white but all of its incoming nodes are black; one of those nodes must be made white
-        (let [bad-node-choices (mapcat (fn [s] (let [in (graph/incoming (:graph jg) s)]
-                                                 (if (every? (fn [n] (= :black (jgcolor jg n))) in)
-                                                   in [])))
-                                       (filter (fn [s] (= :white (jgcolor jg s))) (strokes jg)))]
-          (if (not-empty bad-node-choices)
-            ;; non-determinism here; just use 'first' for the moment, since we don't know what to compare
-            (recur (assert-color jg (first bad-node-choices) :white))
-            jg))))))
+        ;; non-deterministic case: a stroke is white but all of its incoming nodes are black; one of those nodes must be made white;
+        ;; just use 'first' for the moment, since we don't know what to compare
+        (if-let [bad-node-choice (first (mapcat (fn [s] (let [in (graph/incoming (:graph jg) s)]
+                                                          (if (every? (fn [n] (= :black (jgcolor jg n))) in)
+                                                            in [])))
+                                                (filter (fn [s] (= :white (jgcolor jg s))) (strokes jg))))]
+          (recur (assert-color jg bad-node-choice :white))
+          jg)))))
 
 (defn spread-black
   [jg]
@@ -310,12 +309,16 @@
   [jg node]
   (let [jg2 (-> jg (assert-color node :black)
                 (spread-black))]
-    ;; if it didn't work out (no way to spread-black consistently, return nil
-    (if-not (check-axioms jg2) nil jg2)))
+    ;; if it didn't work out (no way to spread-black consistently, spread-white to make up for it
+    (if (check-axioms jg2)
+      jg2
+      (spread-white jg2))))
 
 (defn contract
   [jg node]
   (let [jg2 (-> jg (assert-color node :white)
                 (spread-white))]
-    ;; if it didn't work out (no way to spread-white consistently, return nil
-    (if-not (check-axioms jg2) nil jg2)))
+    ;; if it didn't work out (no way to spread-white consistently, spread-black to make up for it
+    (if (check-axioms jg2)
+      jg2
+      (spread-black jg2))))
