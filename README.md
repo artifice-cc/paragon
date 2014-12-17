@@ -1,53 +1,79 @@
 # paragon
 
-datastructure:
-- types
-  - map: keys = nodes/strokes, vals = :node or :stroke
-- graph
-  - a digraph (from loom)
-- coloring
-  - map: keys = nodes/strokes, vals = :white or :black
+Tennant, Neil. (2012). *Changes of Mind: An Essay on Rational Belief Revision*. Oxford University Press.
+
+- [Amazon Link](http://www.amazon.com/Changes-Mind-Rational-Belief-Revision/dp/0199655758)
+- [Google Books Link](http://books.google.com/books?id=ZESwoBKGxmcC&printsec=frontcover) -- Google Books previews most of Chapter 2 (assuming you initially select Chapter 2 from the TOC menu), which includes the page numbers cited below.
+
+## API
+
+### Construction
 
 `(forall-just jg nodes stroke)` -- creates `stroke`, creates/links each of `nodes` to it
 
 `(exists-just jg strokes node)` -- creates `node`, creates/links each of `strokes` to it
 
-algorithms:
+### Coloring
 
 `(contract jg node)` -- turns node's color to white and runs spread-white
 
 `(expand jg node)` -- turns node's color to black and runs spread-black
 
+### Visualization
+
+`(visualize jg)`
+
+
+## Internal datastructure
+
+```clojure
+{
+ :types {}               ;; keys = nodes/strokes, vals = :node or :stroke
+ :coloring {}            ;; map: keys = nodes/strokes, vals = :white or :black
+ :graph (graph/digraph)  ;; a directed acyclic graph representing arrows, from cc.artifice/loom
+}
+```
+
+## Formal definition
+
 TODO: Special node: :bottom (will want to avoid turning that node black)
 
-Axioms of configuration (p 47):
+### Axioms of Configuration
 
--1. Everything is black or white.
-0. Nothing is both black and white.
-1. Everything is either a node or a stroke.
-2. Nothing is both a node and a stroke.
-3. Strokes send arrows only to nodes.
-4. Nodes send arrows only to strokes.
-5. Every stroke sends an arrow to exactly one thing.
-6. Arrowing is one-way.
-7. If two strokes send arrows to the same thing, and the things from which one of them receives arrows are among those from which the other receives arrows, then those strokes are identical.
-8. Every node receives an arrow.
+(p. 47)
+
+<ul>
+<li>-1. Everything is black or white.</li>
+<li>0. Nothing is both black and white.</li>
+<li>1. Everything is either a node or a stroke.</li>
+<li>2. Nothing is both a node and a stroke.</li>
+<li>3. Strokes send arrows only to nodes.</li>
+<li>4. Nodes send arrows only to strokes.</li>
+<li>5. Every stroke sends an arrow to exactly one thing.</li>
+<li>6. Arrowing is one-way.</li>
+<li>7. If two strokes send arrows to the same thing, and the things from which one of them receives arrows are among those from which the other receives arrows, then those strokes are identical.</li>
+<li>8. Every node receives an arrow.</li>
+</ul>
 
 Consequences:
 
-3a. Strokes receive arrows only from nodes.
-4a. Nodes receive arrows only from strokes.
+<ul>
+<li>3a. Strokes receive arrows only from nodes.</li>
+<li>4a. Nodes receive arrows only from strokes.</li>
+</ul>
 
-An inference pair (step) can be modeled as: `[[a1, ..., an], b]`
+### Axioms of Coloration
 
+(pp. 49-50)
 
-Axioms of coloration:
+<ul>
+<li>1. Every black node receives an arrow from some black inference stroke.</li>
+<li>2. Every white node receives arrows (if any) only from white inference strokes.</li>
+<li>3. Every black inference stroke receives arrows (if any) only from black nodes.</li>
+<li>4. Every white inference stroke that receives an arrow receives an arrow from some white node.</li>
+</ul>
 
-1. Every black node receives an arrow from some black inference stroke.
-2. Every white node receives arrows (if any) only from white inference strokes.
-3. Every black inference stroke receives arrows (if any) only from black nodes.
-4. Every white inference stroke that receives an arrow receives an arrow from some white node.
-
+### Coloring
 
 Contraction: changing a black to white
 
