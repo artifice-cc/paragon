@@ -38,7 +38,7 @@
 
 (defn visualize
   [jg]
-  (graphio/view (:graph jg) :node {:fillcolor :white :style :filled}))
+  (graphio/view (:graph jg) :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defn check-axiom-neg1
   "Everything is black or white."
