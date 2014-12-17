@@ -131,6 +131,7 @@
         jg-expand-cba (-> jg (expand :c) (expand :b) (expand :a))
         jg-expand-cab (-> jg (expand :c) (expand :a) (expand :b))
         jg-expand-d (-> jg (expand :d))]
+    (visualize jg)
     (is (not (nil? jg-expand-a)))
     (is (not (nil? jg-expand-b)))
     (is (not (nil? jg-expand-c)))

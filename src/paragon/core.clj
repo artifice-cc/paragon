@@ -46,7 +46,11 @@
 
 (defn visualize
   [jg]
-  (graphio/view (:graph jg) :node {:fillcolor :white :style :filled :fontname "sans"}))
+  ;; remove "bottoms" except the grouped strokes; no reason to visualize them
+  (let [bottom-strokes-nodes (filter (fn [sn] (and (bottom? sn) (not= "sb-" (subs (str sn) 0 3))))
+                                     (concat (strokes jg) (nodes jg)))]
+    (graphio/view (apply graph/remove-nodes (:graph jg) bottom-strokes-nodes)
+                  :node {:fillcolor :white :style :filled :fontname "sans"})))
 
 (defn check-axiom-neg1
   "Everything is black or white."
