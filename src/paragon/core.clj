@@ -31,7 +31,8 @@
   [stroke-or-node]
   (let [snstr (if (keyword? stroke-or-node) (name stroke-or-node) (str stroke-or-node))
         prefix (subs snstr 0 (min 2 (count snstr)))]
-    (or (= "sb" prefix)
+    (or (= "uncertainty" snstr)
+        (= "sb" prefix)
         (= "nb" prefix))))
 
 (defn believed
@@ -219,6 +220,7 @@
 
 (defn assert-color
   [jg stroke-or-node color]
+  (println "asserting" stroke-or-node "as" color)
   (-> jg
       (assoc-in [:coloring stroke-or-node] color)
       (update-in [:graph] graphattr/add-attr stroke-or-node :fillcolor color)
@@ -285,26 +287,42 @@
   (if (check-axioms jg)
     ;; nothing to do, everything checks out
     jg
-    ;; something to do (inconsistent), spread black
-    ;; first case: a stroke is white but has all black incoming nodes; or, it points to a black node; turn it black
-    (if-let [bad-stroke (first (filter (fn [s] (and (not (bottom? s))
-                                                    (= :white (jgcolor jg s))
-                                                    (or (and (not-empty (graph/incoming (:graph jg) s))
-                                                             (every? (fn [n] (= :black (jgcolor jg n)))
-                                                                     (graph/incoming (:graph jg) s)))
-                                                        (= :black (jgcolor jg (first (graph/neighbors (:graph jg) s)))))))
-                                       (strokes jg)))]
-      (recur (assert-color jg bad-stroke :black))
-      ;; second case: a node is white but has all black incoming strokes; or, one of its outgoing strokes is black; turn it black
-      (if-let [bad-node (first (filter (fn [n] (and (not (bottom? n))
-                                                    (= :white (jgcolor jg n))
-                                                    (or (every? (fn [s] (= :black (jgcolor jg s)))
-                                                                (graph/incoming (:graph jg) n))
-                                                        (some (fn [s] (= :black (jgcolor jg s))) (graph/neighbors (:graph jg) n)))))
-                                       (nodes jg)))]
-        (recur (assert-color jg bad-node :black))
-        jg))))
+    ;; something to do (inconsistent), spread black.
+    ;; - bad-strokes: a stroke is white but has all black incoming nodes;
+    ;;   or, it points to a black node with no white strokes; turn it black.
+    ;; - bad-nodes: a node is white but has all black incoming strokes;
+    ;;   or, one of its outgoing strokes is black; turn it black.
+    (let [bad-strokes (filter (fn [s] (and (not (bottom? s))
+                                           (= :white (jgcolor jg s))
+                                           (or (and (not-empty (graph/incoming (:graph jg) s))
+                                                    (every? (fn [n] (= :black (jgcolor jg n)))
+                                                            (graph/incoming (:graph jg) s)))
+                                               (and (= :black (jgcolor jg (first (graph/neighbors (:graph jg) s))))
+                                                    (every? (fn [s2] (= :white (jgcolor jg s2)))
+                                                            (graph/incoming (:graph jg)
+                                                                            (first (graph/neighbors (:graph jg) s))))))))
+                              (strokes jg))
+          bad-nodes (filter (fn [n] (and (not (bottom? n))
+                                         (= :white (jgcolor jg n))
+                                         (or (every? (fn [s] (= :black (jgcolor jg s)))
+                                                     (graph/incoming (:graph jg) n))
+                                             (some (fn [s] (= :black (jgcolor jg s)))
+                                                   (graph/neighbors (:graph jg) n)))))
+                            (nodes jg))]
+      (cond
+        (not-empty bad-strokes)
+          (let [best-bad-stroke (first bad-strokes)]
+            (println "found bad strokes:" bad-strokes)
+            (println "choosing bad stroke:" best-bad-stroke)
+            (recur (assert-color jg best-bad-stroke :black)))
+        (not-empty bad-nodes)
+          (let [best-bad-node (first bad-nodes)]
+            (println "found bad nodes:" bad-nodes)
+            (println "choosing bad node:" best-bad-node)
+            (recur (assert-color jg best-bad-node :black)))
+        :otherwise jg))))
 
+;; TODO: should expand always introduce a new stroke?
 (defn expand
   [jg node]
   (let [jg2 (-> jg (assert-color node :black)

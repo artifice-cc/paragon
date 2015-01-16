@@ -2,6 +2,33 @@
   (:require [clojure.test :refer :all]
             [paragon.core :refer :all]))
 
+(deftest test-spread-black
+  (let [jg (-> (new-just-graph)
+               (premise :strokeH1 :h1)
+               (premise :strokeH2 :h2)
+               (premise :strokeH3 :h3)
+               (forall-just [:h1 :uncertainty] :stroke1H1)
+               (forall-just [:h1 :uncertainty] :stroke2H1)
+               (forall-just [:h2 :uncertainty] :stroke1H2)
+               (forall-just [:h2 :uncertainty] :stroke4H2)
+               (forall-just [:h3 :uncertainty] :stroke3H3)
+               (forall-just [:h3 :uncertainty] :stroke4H3)
+               (exists-just [:stroke1H1] :s1)
+               (exists-just [:stroke1H2] :s1)
+               (exists-just [:stroke2H1] :s2)
+               (exists-just [:stroke3H3] :s3)
+               (exists-just [:stroke4H2] :s4)
+               (exists-just [:stroke4H3] :s4)
+               (assert-color :s1 :black)
+               (assert-color :s2 :black)
+               (assert-color :s3 :black)
+               (assert-color :s4 :black)
+               )]
+    (visualize jg)
+    (println "start")
+    (visualize (spread-black jg))
+    (println "stop")))
+
 (deftest test-contraction
   (let [jg (-> (new-just-graph)
                (premise :strokeA :a)

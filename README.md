@@ -68,10 +68,12 @@ Consequences:
 
 <ul>
 <li>1. Every black node receives an arrow from some black inference stroke.</li>
-<li>2. Every white node receives arrows (if any) only from white inference strokes.</li>
+<li>2. Every white node receives arrows only from white inference strokes. *</li>
 <li>3. Every black inference stroke receives arrows (if any) only from black nodes.</li>
 <li>4. Every white inference stroke that receives an arrow receives an arrow from some white node.</li>
 </ul>
+
+\* p. 49, Axiom of Coloration 2: "Every white node receives arrows (if any) only from white inference strokes." --- But Axiom 8 states "Every node receives an arrow" so the "(if any)" should be dropped from Axiom of Coloration 2.
 
 ### Coloring
 
