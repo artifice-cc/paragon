@@ -311,7 +311,9 @@
     jg
     ;; something to do (inconsistent), spread white
     (if-let [bad-stroke (first (filter (fn [s] (and (black? jg s)
-                                                    (or (some (fn [n] (white? jg n)) (jgin jg s))
+                                                    (or (some (fn [n] (and (not (uncertainty? n))
+                                                                           (white? jg n)))
+                                                              (jgin jg s))
                                                         (white? jg (first (jgout jg s))))))
                                        (strokes jg)))]
       (recur (assert-white jg bad-stroke))
@@ -356,17 +358,18 @@
                                              (some (fn [s] (black? jg s))
                                                    (jgout jg n)))))
                             (nodes jg))]
+      (when @debugging?
+        (println "found bad strokes:" bad-strokes)
+        (println "found bad nodes:" bad-nodes))
       (cond
         (not-empty bad-strokes)
           (let [best-bad-stroke (first bad-strokes)]
             (when @debugging?
-              (println "found bad strokes:" bad-strokes)
               (println "choosing bad stroke:" best-bad-stroke))
             (recur (assert-black jg best-bad-stroke)))
         (not-empty bad-nodes)
           (let [best-bad-node (first bad-nodes)]
             (when @debugging?
-              (println "found bad nodes:" bad-nodes)
               (println "choosing bad node:" best-bad-node))
             (recur (assert-black jg best-bad-node)))
         :otherwise jg))))
