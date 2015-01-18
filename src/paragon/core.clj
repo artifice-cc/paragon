@@ -1,4 +1,5 @@
 (ns paragon.core
+  (:require [clojure.set :as set])
   (:require [clojure.string :as str])
   (:require [loom.graph :as graph])
   (:require [loom.alg :as graphalg])
@@ -9,6 +10,7 @@
   []
   {:types {}
    :coloring {}
+   :inconsistent {}
    :graph (graph/digraph)})
 
 (defn nodes
@@ -27,31 +29,67 @@
   [jg stroke-or-node]
   (get-in jg [:types stroke-or-node]))
 
-(defn bottom?
+(defn white?
+  [jg stroke-or-node]
+  (= :white (jgcolor jg stroke-or-node)))
+
+(defn black?
+  [jg stroke-or-node]
+  (= :black (jgcolor jg stroke-or-node)))
+
+(defn node?
+  [jg stroke-or-node]
+  (= :node (jgtype jg stroke-or-node)))
+
+(defn stroke?
+  [jg stroke-or-node]
+  (= :stroke (jgtype jg stroke-or-node)))
+
+(defn jgstr
   [stroke-or-node]
-  (let [snstr (if (keyword? stroke-or-node) (name stroke-or-node) (str stroke-or-node))
-        prefix (subs snstr 0 (min 2 (count snstr)))]
+  (if (keyword? stroke-or-node) (name stroke-or-node) (str stroke-or-node)))
+
+(defn uncertainty?
+  [stroke-or-node]
+  (let [snstr (jgstr stroke-or-node)]
     (or (= "uncertainty" snstr)
-        (= "sb" prefix)
-        (= "nb" prefix))))
+        (= "uncertainty-stroke" snstr))))
+
+(defn consistent-if-black?
+  [jg stroke-or-node]
+  (or (empty? (get-in jg [:inconsistent stroke-or-node]))
+      (not-any? (fn [sn-inc] (black? jg sn-inc)) (get-in jg [:inconsistent stroke-or-node]))))
 
 (defn believed
   "Returns black nodes."
   [jg]
-  (filter (fn [n] (= :black (jgcolor jg n))) (nodes jg)))
+  (filter (partial black? jg) (nodes jg)))
 
 (defn unbelieved
   "Returns white nodes."
   [jg]
-  (filter (fn [n] (= :white (jgcolor jg n))) (nodes jg)))
+  (filter (partial white? jg) (nodes jg)))
+
+(defn jgout
+  [jg stroke-or-node]
+  (graph/neighbors (:graph jg) stroke-or-node))
+
+(defn jgin
+  [jg stroke-or-node]
+  (graph/incoming (:graph jg) stroke-or-node))
 
 (defn visualize
   [jg]
-  ;; remove "bottoms" except the grouped strokes; no reason to visualize them
-  (let [bottom-strokes-nodes (filter (fn [sn] (and (bottom? sn) (not= "sb-" (subs (str sn) 0 3))))
-                                     (concat (strokes jg) (nodes jg)))]
-    (graphio/view (apply graph/remove-nodes (:graph jg) bottom-strokes-nodes)
-                  :node {:fillcolor :white :style :filled :fontname "sans"})))
+  (let [uncertainty-strokes-nodes (filter uncertainty? (concat (strokes jg) (nodes jg)))
+        inconsistent-edges (set (for [sn (keys (:inconsistent jg))
+                                      sn-inc (get-in jg [:inconsistent sn])]
+                                  (sort [sn sn-inc])))
+        g-no-uncertainty (apply graph/remove-nodes (:graph jg) uncertainty-strokes-nodes)
+        g-inc-edges (-> (apply graph/add-edges g-no-uncertainty inconsistent-edges)
+                        (graphattr/add-attr-to-edges :style :dotted inconsistent-edges)
+                        (graphattr/add-attr-to-edges :arrowhead :none inconsistent-edges)
+                        (graphattr/add-attr-to-edges :constraint :false inconsistent-edges))]
+    (graphio/view g-inc-edges :node {:fillcolor :white :style :filled :fontname "sans"})))
 
 (defn check-axiom-neg1
   "Everything is black or white."
@@ -81,15 +119,15 @@
   "Strokes send arrows only to nodes. Nodes send arrows only to strokes."
   [jg]
   (every? (fn [[start end]]
-            (cond (= :stroke (jgtype jg start)) (= :node (jgtype jg end))
-                  (= :node (jgtype jg start)) (= :stroke (jgtype jg end))
+            (cond (stroke? jg start) (node? jg end)
+                  (node? jg start) (stroke? jg end)
                   :else nil))
           (graph/edges (:graph jg))))
 
 (defn check-axiom-5
   "Every stroke sends an arrow to exactly one thing."
   [jg]
-  (every? (fn [stroke] (= 1 (count (graph/neighbors (:graph jg) stroke))))
+  (every? (fn [stroke] (= 1 (count (jgout jg stroke))))
           (strokes jg)))
 
 (defn check-axiom-6
@@ -103,63 +141,70 @@
   (every? (fn [s] (every? (fn [s2] (= s s2))
                           ;; find strokes s2 where s2's incoming arrows are subseteq of incoming arrows of s
                           (filter (fn [s2]
-                                    (every? (set (graph/incoming (:graph jg) s))
-                                            (graph/incoming (:graph jg) s2)))
+                                    (every? (set (jgin jg s)) (jgin jg s2)))
                                   ;; find strokes that have an arrow to the same node
-                                  (filter (fn [s2] (= (first (graph/neighbors (:graph jg) s))
-                                                      (first (graph/neighbors (:graph jg) s2))))
+                                  (filter (fn [s2] (= (first (jgout jg s))
+                                                      (first (jgout jg s2))))
                                           (strokes jg)))))
           (strokes jg)))
 
 (defn check-axiom-8
   "Every node receives an arrow."
   [jg]
-  (every? (fn [node] (not-empty (graph/incoming (:graph jg) node)))
+  (every? (fn [node] (not-empty (jgin jg node)))
           (nodes jg)))
 
 (defn check-axiom-coloration-1
   "Every black node receives an arrow from some black inference stroke."
   [jg]
-  (every? (fn [node] (or (= :white (jgcolor jg node))
-                         (some (fn [in] (and (= :stroke (jgtype jg in))
-                                             (= :black (jgcolor jg in))))
-                               (graph/incoming (:graph jg) node))))
+  (every? (fn [node] (or (white? jg node)
+                         (some (fn [in] (and (stroke? jg in) (black? jg in)))
+                               (jgin jg node))))
           (nodes jg)))
 
 (defn check-axiom-coloration-2
   "Every white node receives arrows only from white inference strokes."
   [jg]
-  (every? (fn [node] (or (= :black (jgcolor jg node))
-                         (every? (fn [in] (and (= :stroke (jgtype jg in))
-                                               (= :white (jgcolor jg in))))
-                                 (graph/incoming (:graph jg) node))))
+  (every? (fn [node] (or (black? jg node)
+                         (every? (fn [in] (and (stroke? jg in)
+                                               (white? jg in)))
+                                 (jgin jg node))))
           (nodes jg)))
 
 (defn check-axiom-coloration-3
   "Every black inference stroke receives arrows (if any) only from black nodes."
   [jg]
-  (every? (fn [stroke] (or (= :white (jgcolor jg stroke))
-                           (empty? (graph/incoming (:graph jg) stroke))
-                           (every? (fn [in] (and (= :node (jgtype jg in))
-                                               (= :black (jgcolor jg in))))
-                                   (graph/incoming (:graph jg) stroke))))
+  (every? (fn [stroke] (or (white? jg stroke)
+                           (empty? (jgin jg stroke))
+                           (every? (fn [n] (and (node? jg n)
+                                                (or (uncertainty? n) (black? jg n))))
+                                   (jgin jg stroke))))
           (strokes jg)))
 
 (defn check-axiom-coloration-4
   "Every white inference stroke that receives an arrow receives an arrow from some white node."
   [jg]
-  (every? (fn [stroke] (or (= :black (jgcolor jg stroke))
-                           (empty? (graph/incoming (:graph jg) stroke))
-                           (some (fn [in] (and (= :node (jgtype jg in))
-                                               (= :white (jgcolor jg in))))
-                                 (graph/incoming (:graph jg) stroke))))
+  (every? (fn [stroke] (or (black? jg stroke)
+                           (empty? (jgin jg stroke))
+                           (some (fn [in] (and (node? jg in)
+                                               (white? jg in)))
+                                 (jgin jg stroke))))
           (strokes jg)))
 
-(defn check-axiom-coloration-bottom
-  "Extra axiom: Ensure :sbottom and :nbottom (stroke and node) are white."
+(defn check-axiom-coloration-uncertainty
+  "Extra axiom: Both :uncertainty, :uncertainty-stroke are white."
   [jg]
-  (every? (fn [sn] (= :white (jgcolor jg sn)))
-          (filter (fn [sn] (bottom? sn)) (concat (nodes jg) (strokes jg)))))
+  (every? (fn [sn] (white? jg sn))
+          (filter (fn [sn] (uncertainty? sn)) (concat (nodes jg) (strokes jg)))))
+
+(defn check-axiom-coloration-inconsistencies
+  "Extra axiom: No two nodes/strokes of an inconsistent pair are black."
+  [jg]
+  (every? (fn [sn] (or (empty? (get-in jg [:inconsistent sn]))
+                       (white? jg sn)
+                       ;; sn is black
+                       (not-any? (fn [sn-inc] (black? jg sn-inc)) (get-in jg [:inconsistent sn]))))
+          (keys (:inconsistent jg))))
 
 (defn check-axioms
   [jg]
@@ -176,7 +221,8 @@
        (check-axiom-coloration-2 jg)
        (check-axiom-coloration-3 jg)
        (check-axiom-coloration-4 jg)
-       (check-axiom-coloration-bottom jg)))
+       (check-axiom-coloration-uncertainty jg)
+       (check-axiom-coloration-inconsistencies jg)))
 
 (defn check-axioms-debug
   [jg]
@@ -193,7 +239,8 @@
        (or (check-axiom-coloration-2 jg) (println "Fails Axiom of Coloration 2."))
        (or (check-axiom-coloration-3 jg) (println "Fails Axiom of Coloration 3."))
        (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))
-       (or (check-axiom-coloration-bottom jg) (println "Fails Axiom of Coloration - Bottom."))))
+       (or (check-axiom-coloration-uncertainty jg) (println "Fails Axiom of Coloration - Uncertainty."))
+       (or (check-axiom-coloration-inconsistencies jg) (println "Fails Axiom of Coloration - Inconsistencies."))))
 
 (defn premise
   [jg stroke node]
@@ -220,41 +267,34 @@
 
 (defn assert-color
   [jg stroke-or-node color]
-  (println "asserting" stroke-or-node "as" color)
+  #_(println "asserting" stroke-or-node "as" color)
   (-> jg
       (assoc-in [:coloring stroke-or-node] color)
       (update-in [:graph] graphattr/add-attr stroke-or-node :fillcolor color)
       (update-in [:graph] graphattr/add-attr stroke-or-node :fontcolor (if (= :black color) :white :black))))
 
-(defn add-inconsistencies
-  "Indicate sets of nodes where, for each set, not all the nodes can be black simultaneously.
+(defn assert-black
+  [jg stroke-or-node]
+  (assert-color jg stroke-or-node :black))
 
-  Usage example: (add-inconsistencies jg [:node1 :node2 :node3] [:node4 :node5])"
-  [jg & node-sets]
-  (let [jg-universal-bottom (-> jg
-                                (assoc-in [:types :sbottom] :stroke)
-                                (assoc-in [:types :nbottom] :node)
-                                (update-in [:graph] graphattr/add-attr :sbottom :shape :underline)
-                                (assert-color :sbottom :white)
-                                (assert-color :nbottom :white)
-                                (update-in [:graph] graph/add-edges [:sbottom :nbottom]))]
-    (reduce (fn [jg2 node-set]
-              (let [nodes-str (str/join "-" (map (fn [n] (if (keyword? n) (name n) (str n))) node-set))
-                    bottom-set-stroke (format "sb-%s" nodes-str)
-                    bottom-set-node (format "nb-%s" nodes-str)]
-                (reduce (fn [jg3 node]
-                          (-> jg3
-                              (assoc-in [:types node] :node)
-                              (update-in [:graph] graph/add-edges [node bottom-set-stroke])))
-                        (-> jg2
-                            (assoc-in [:types bottom-set-stroke] :stroke)
-                            (assoc-in [:types bottom-set-node] :node)
-                            (update-in [:graph] graphattr/add-attr bottom-set-stroke :shape :underline)
-                            (assert-color bottom-set-stroke :white)
-                            (assert-color bottom-set-node :white)
-                            (update-in [:graph] graph/add-edges [bottom-set-stroke bottom-set-node] [bottom-set-node :sbottom]))
-                        node-set)))
-            jg-universal-bottom node-sets)))
+(defn assert-white
+  [jg stroke-or-node]
+  (assert-color jg stroke-or-node :white))
+
+(defn add-inconsistencies
+  "Indicate nodes that are inconsistent with a given node.
+
+  Usage example: (add-inconsistencies jg :node1 [:node4 :node5])"
+  [jg node node-inc-set]
+  (letfn [(set-inc [jgx n ns] (let [old-inc (get-in jgx [:inconsistent n] #{})]
+                                (assoc-in jgx [:inconsistent n] (set/union old-inc (set ns)))))]
+    (reduce (fn [jg2 n] (set-inc jg2 n [node]))
+            (set-inc jg node node-inc-set) node-inc-set)))
+
+(defn get-inconsistencies
+  "Return structure: {:node1 #{:node2 :node3} :node2 #{:node1 :node3} :node3 #{:node1 :node2}}"
+  [jg]
+  (:inconsistent jg))
 
 (defn spread-white
   [jg]
@@ -262,24 +302,23 @@
     ;; nothing to do, everything checks out
     jg
     ;; something to do (inconsistent), spread white
-    (if-let [bad-stroke (first (filter (fn [s] (and (= :black (jgcolor jg s))
-                                                    (or (some (fn [n] (= :white (jgcolor jg n)))
-                                                              (graph/incoming (:graph jg) s))
-                                                        (= :white (jgcolor jg (first (graph/neighbors (:graph jg) s)))))))
+    (if-let [bad-stroke (first (filter (fn [s] (and (black? jg s)
+                                                    (or (some (fn [n] (white? jg n)) (jgin jg s))
+                                                        (white? jg (first (jgout jg s))))))
                                        (strokes jg)))]
-      (recur (assert-color jg bad-stroke :white))
-      (if-let [bad-node (first (filter (fn [n] (and (= :black (jgcolor jg n))
-                                                    (every? (fn [s] (= :white (jgcolor jg s)))
-                                                            (graph/incoming (:graph jg) n))))
+      (recur (assert-white jg bad-stroke))
+      (if-let [bad-node (first (filter (fn [n] (and (black? jg n)
+                                                    (every? (fn [s] (white? jg s))
+                                                            (jgin jg n))))
                                        (nodes jg)))]
-        (recur (assert-color jg bad-node :white))
+        (recur (assert-white jg bad-node))
         ;; non-deterministic case: a stroke is white but all of its incoming nodes are black; one of those nodes must be made white;
         ;; just use 'first' for the moment, since we don't know what to compare
-        (if-let [bad-node-choice (first (mapcat (fn [s] (let [in (graph/incoming (:graph jg) s)]
-                                                          (if (every? (fn [n] (= :black (jgcolor jg n))) in)
+        (if-let [bad-node-choice (first (mapcat (fn [s] (let [in (jgin jg s)]
+                                                          (if (every? (fn [n] (black? jg n)) in)
                                                             in [])))
-                                                (filter (fn [s] (= :white (jgcolor jg s))) (strokes jg))))]
-          (recur (assert-color jg bad-node-choice :white))
+                                                (filter (fn [s] (white? jg s)) (strokes jg))))]
+          (recur (assert-white jg bad-node-choice))
           jg)))))
 
 (defn spread-black
@@ -292,40 +331,40 @@
     ;;   or, it points to a black node with no white strokes; turn it black.
     ;; - bad-nodes: a node is white but has all black incoming strokes;
     ;;   or, one of its outgoing strokes is black; turn it black.
-    (let [bad-strokes (filter (fn [s] (and (not (bottom? s))
-                                           (= :white (jgcolor jg s))
-                                           (or (and (not-empty (graph/incoming (:graph jg) s))
-                                                    (every? (fn [n] (= :black (jgcolor jg n)))
-                                                            (graph/incoming (:graph jg) s)))
-                                               (and (= :black (jgcolor jg (first (graph/neighbors (:graph jg) s))))
-                                                    (every? (fn [s2] (= :white (jgcolor jg s2)))
-                                                            (graph/incoming (:graph jg)
-                                                                            (first (graph/neighbors (:graph jg) s))))))))
+    (let [bad-strokes (filter (fn [s] (and (not (uncertainty? s))
+                                           (white? jg s)
+                                           (consistent-if-black? jg s)
+                                           (or (and (not-empty (jgin jg s))
+                                                    (every? (fn [n] (black? jg n))
+                                                            (jgin jg s)))
+                                               (and (black? jg (first (jgout jg s)))
+                                                    (every? (fn [s2] (white? jg s2))
+                                                            (jgin jg (first (jgout jg s))))))))
                               (strokes jg))
-          bad-nodes (filter (fn [n] (and (not (bottom? n))
-                                         (= :white (jgcolor jg n))
-                                         (or (every? (fn [s] (= :black (jgcolor jg s)))
-                                                     (graph/incoming (:graph jg) n))
-                                             (some (fn [s] (= :black (jgcolor jg s)))
-                                                   (graph/neighbors (:graph jg) n)))))
+          bad-nodes (filter (fn [n] (and (not (uncertainty? n))
+                                         (white? jg n)
+                                         (consistent-if-black? jg n)
+                                         (or (every? (fn [s] (black? jg s)) (jgin jg n))
+                                             (some (fn [s] (black? jg s))
+                                                   (jgout jg n)))))
                             (nodes jg))]
       (cond
         (not-empty bad-strokes)
           (let [best-bad-stroke (first bad-strokes)]
-            (println "found bad strokes:" bad-strokes)
-            (println "choosing bad stroke:" best-bad-stroke)
-            (recur (assert-color jg best-bad-stroke :black)))
+            #_(println "found bad strokes:" bad-strokes)
+            #_(println "choosing bad stroke:" best-bad-stroke)
+            (recur (assert-black jg best-bad-stroke)))
         (not-empty bad-nodes)
           (let [best-bad-node (first bad-nodes)]
-            (println "found bad nodes:" bad-nodes)
-            (println "choosing bad node:" best-bad-node)
-            (recur (assert-color jg best-bad-node :black)))
+            #_(println "found bad nodes:" bad-nodes)
+            #_(println "choosing bad node:" best-bad-node)
+            (recur (assert-black jg best-bad-node)))
         :otherwise jg))))
 
 ;; TODO: should expand always introduce a new stroke?
 (defn expand
   [jg node]
-  (let [jg2 (-> jg (assert-color node :black)
+  (let [jg2 (-> jg (assert-black node)
                 (spread-black))]
     ;; if it didn't work out (no way to spread-black consistently, spread-white to make up for it
     (if (check-axioms jg2)
@@ -334,7 +373,7 @@
 
 (defn contract
   [jg node]
-  (let [jg2 (-> jg (assert-color node :white)
+  (let [jg2 (-> jg (assert-white node)
                 (spread-white))]
     ;; if it didn't work out (no way to spread-white consistently, spread-black to make up for it
     (if (check-axioms jg2)
