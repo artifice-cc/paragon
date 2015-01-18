@@ -359,13 +359,15 @@
       (cond
         (not-empty bad-strokes)
           (let [best-bad-stroke (first bad-strokes)]
-            #_(println "found bad strokes:" bad-strokes)
-            #_(println "choosing bad stroke:" best-bad-stroke)
+            (when @debugging?
+              (println "found bad strokes:" bad-strokes)
+              (println "choosing bad stroke:" best-bad-stroke))
             (recur (assert-black jg best-bad-stroke)))
         (not-empty bad-nodes)
           (let [best-bad-node (first bad-nodes)]
-            #_(println "found bad nodes:" bad-nodes)
-            #_(println "choosing bad node:" best-bad-node)
+            (when @debugging?
+              (println "found bad nodes:" bad-nodes)
+              (println "choosing bad node:" best-bad-node))
             (recur (assert-black jg best-bad-node)))
         :otherwise jg))))
 
