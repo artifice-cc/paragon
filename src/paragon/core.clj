@@ -6,6 +6,12 @@
   (:require [loom.attr :as graphattr])
   (:require [loom.io :as graphio]))
 
+(def debugging? (atom false))
+
+(defn turn-on-debugging [] (swap! debugging? (constantly true)))
+
+(defn turn-off-debugging [] (swap! debugging? (constantly false)))
+
 (defn new-just-graph
   []
   {:types {}
@@ -206,24 +212,6 @@
                        (not-any? (fn [sn-inc] (black? jg sn-inc)) (get-in jg [:inconsistent sn]))))
           (keys (:inconsistent jg))))
 
-(defn check-axioms
-  [jg]
-  (and (check-axiom-neg1 jg)
-       (check-axiom-0 jg)
-       (check-axiom-1 jg)
-       (check-axiom-2 jg)
-       (check-axiom-3-and-4 jg)
-       (check-axiom-5 jg)
-       (check-axiom-6 jg)
-       (check-axiom-7 jg)
-       (check-axiom-8 jg)
-       (check-axiom-coloration-1 jg)
-       (check-axiom-coloration-2 jg)
-       (check-axiom-coloration-3 jg)
-       (check-axiom-coloration-4 jg)
-       (check-axiom-coloration-uncertainty jg)
-       (check-axiom-coloration-inconsistencies jg)))
-
 (defn check-axioms-debug
   [jg]
   (and (or (check-axiom-neg1 jg) (println "Fails Axiom -1."))
@@ -241,6 +229,26 @@
        (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))
        (or (check-axiom-coloration-uncertainty jg) (println "Fails Axiom of Coloration - Uncertainty."))
        (or (check-axiom-coloration-inconsistencies jg) (println "Fails Axiom of Coloration - Inconsistencies."))))
+
+(defn check-axioms
+  [jg]
+  (if debugging?
+    (check-axioms-debug jg)
+    (and (check-axiom-neg1 jg)
+         (check-axiom-0 jg)
+         (check-axiom-1 jg)
+         (check-axiom-2 jg)
+         (check-axiom-3-and-4 jg)
+         (check-axiom-5 jg)
+         (check-axiom-6 jg)
+         (check-axiom-7 jg)
+         (check-axiom-8 jg)
+         (check-axiom-coloration-1 jg)
+         (check-axiom-coloration-2 jg)
+         (check-axiom-coloration-3 jg)
+         (check-axiom-coloration-4 jg)
+         (check-axiom-coloration-uncertainty jg)
+         (check-axiom-coloration-inconsistencies jg))))
 
 (defn premise
   [jg stroke node]
@@ -267,7 +275,7 @@
 
 (defn assert-color
   [jg stroke-or-node color]
-  #_(println "asserting" stroke-or-node "as" color)
+  (when @debugging? (println "asserting" stroke-or-node "as" color))
   (-> jg
       (assoc-in [:coloring stroke-or-node] color)
       (update-in [:graph] graphattr/add-attr stroke-or-node :fillcolor color)

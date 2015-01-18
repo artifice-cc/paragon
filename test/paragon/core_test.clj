@@ -29,7 +29,7 @@
                (add-inconsistencies :stroke4H2 [:stroke3H3 :stroke4H3])
                (add-inconsistencies :stroke1H2 [:stroke3H3 :stroke4H3]))]
     #_(visualize jg)
-    #_(visualize (spread-black jg))
+    (visualize (spread-black jg))
     (is (= #{:s1 :s2 :s3 :s4} (set (believed jg))))
     (is (= #{:h1 :h3 :s1 :s2 :s3 :s4} (set (believed (spread-black jg)))))))
 
