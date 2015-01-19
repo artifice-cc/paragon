@@ -58,8 +58,9 @@
 (defn uncertainty?
   [stroke-or-node]
   (let [snstr (jgstr stroke-or-node)]
-    (or (= "uncertainty" snstr)
-        (= "uncertainty-stroke" snstr))))
+    (or (= "uncertainty-node" snstr)
+        (= "uncertainty-stroke" snstr)
+        (= "un" (subs snstr 0 (min (count snstr) 2))))))
 
 (defn consistent-if-black?
   [jg stroke-or-node]
@@ -86,12 +87,16 @@
 
 (defn visualize
   [jg]
-  (let [uncertainty-strokes-nodes (filter uncertainty? (concat (strokes jg) (nodes jg)))
-        inconsistent-edges (set (for [sn (keys (:inconsistent jg))
+  (let [inconsistent-edges (set (for [sn (keys (:inconsistent jg))
                                       sn-inc (get-in jg [:inconsistent sn])]
                                   (sort [sn sn-inc])))
-        g-no-uncertainty (apply graph/remove-nodes (:graph jg) uncertainty-strokes-nodes)
-        g-inc-edges (-> (apply graph/add-edges g-no-uncertainty inconsistent-edges)
+        g-uncertainty (-> (:graph jg)
+                          (graph/remove-nodes :uncertainty-stroke :uncertainty-node)
+                          ;; make all uncertainty node-specific strokes have label "?"
+                          (graphattr/add-attr-to-nodes
+                            :label "?" (filter #(= "un" (subs (jgstr %) 0 (min (count (jgstr %)) 2)))
+                                               (strokes jg))))
+        g-inc-edges (-> (apply graph/add-edges g-uncertainty inconsistent-edges)
                         (graphattr/add-attr-to-edges :style :dotted inconsistent-edges)
                         (graphattr/add-attr-to-edges :arrowhead :none inconsistent-edges)
                         (graphattr/add-attr-to-edges :constraint :false inconsistent-edges))]
@@ -147,7 +152,9 @@
   (every? (fn [s] (every? (fn [s2] (= s s2))
                           ;; find strokes s2 where s2's incoming arrows are subseteq of incoming arrows of s
                           (filter (fn [s2]
-                                    (every? (set (jgin jg s)) (jgin jg s2)))
+                                    (and (not-empty (jgin jg s))
+                                         (not-empty (jgin jg s2))
+                                         (every? (set (jgin jg s)) (jgin jg s2))))
                                   ;; find strokes that have an arrow to the same node
                                   (filter (fn [s2] (= (first (jgout jg s))
                                                       (first (jgout jg s2))))
@@ -250,14 +257,6 @@
          (check-axiom-coloration-uncertainty jg)
          (check-axiom-coloration-inconsistencies jg))))
 
-(defn premise
-  [jg stroke node]
-  (-> jg
-      (assoc-in [:types node] :node)
-      (assoc-in [:types stroke] :stroke)
-      (update-in [:graph] graph/add-edges [stroke node])
-      (update-in [:graph] graphattr/add-attr stroke :shape :underline)))
-
 (defn forall-just
   [jg nodes stroke]
   (reduce (fn [jg2 node] (-> jg2
@@ -272,6 +271,32 @@
                              (update-in [:graph] graphattr/add-attr stroke :shape :underline)
                              (update-in [:graph] graph/add-edges [stroke node])))
           (assoc-in jg [:types node] :node) strokes))
+
+(defn premise
+  [jg node]
+  (let [stroke (format "_%s" (jgstr node))]
+    (exists-just jg [stroke] node)))
+
+(defn add-uncertainty-to-node
+  [jg node]
+  (-> jg
+      (exists-just [:uncertainty-stroke] :uncertainty-node)
+      (forall-just [:uncertainty-node] (format "un%s" (jgstr node)))
+      (exists-just [(format "un%s" (jgstr node))] node)))
+
+(defn hypothesis
+  [jg node]
+  (-> jg
+      (premise node)
+      (add-uncertainty-to-node node)))
+
+(defn can-explain
+  [jg explanans explanandum]
+  (let [stroke (format "%s_%s" (jgstr explanans) (jgstr explanandum))]
+    (-> jg
+        (hypothesis explanans)
+        (forall-just [explanans] stroke)
+        (exists-just [stroke] explanandum))))
 
 (defn assert-color
   [jg stroke-or-node color]
@@ -308,7 +333,8 @@
   [jg]
   (if (check-axioms jg)
     ;; nothing to do, everything checks out
-    jg
+    (do (when @debugging? (println "All axioms satisfied in spread-white."))
+        jg)
     ;; something to do (inconsistent), spread white
     (if-let [bad-stroke (first (filter (fn [s] (and (black? jg s)
                                                     (or (some (fn [n] (and (not (uncertainty? n))
@@ -329,13 +355,15 @@
                                                             in [])))
                                                 (filter (fn [s] (white? jg s)) (strokes jg))))]
           (recur (assert-white jg bad-node-choice))
-          jg)))))
+          (do (when @debugging? (println "Axioms failed in spread-white."))
+              jg))))))
 
 (defn spread-black
   [jg]
   (if (check-axioms jg)
     ;; nothing to do, everything checks out
-    jg
+    (do (when @debugging? (println "All axioms satisfied in spread-black."))
+        jg)
     ;; something to do (inconsistent), spread black.
     ;; - bad-strokes: a stroke is white but has all black incoming nodes;
     ;;   or, it points to a black node with no white strokes; turn it black.
@@ -354,9 +382,8 @@
           bad-nodes (filter (fn [n] (and (not (uncertainty? n))
                                          (white? jg n)
                                          (consistent-if-black? jg n)
-                                         (or (every? (fn [s] (black? jg s)) (jgin jg n))
-                                             (some (fn [s] (black? jg s))
-                                                   (jgout jg n)))))
+                                         (or (some (fn [s] (black? jg s)) (jgin jg n))
+                                             (some (fn [s] (black? jg s)) (jgout jg n)))))
                             (nodes jg))]
       (when @debugging?
         (println "found bad strokes:" bad-strokes)
@@ -372,14 +399,16 @@
             (when @debugging?
               (println "choosing bad node:" best-bad-node))
             (recur (assert-black jg best-bad-node)))
-        :otherwise jg))))
+        :otherwise
+        (do (when @debugging? (println "Axioms failed in spread-black."))
+            jg)))))
 
 ;; TODO: should expand always introduce a new stroke?
 (defn expand
   [jg node]
   (let [jg2 (-> jg (assert-black node)
                 (spread-black))]
-    ;; if it didn't work out (no way to spread-black consistently, spread-white to make up for it
+    ;; if it didn't work out (no way to spread-black consistently), spread-white to make up for it
     (if (check-axioms jg2)
       jg2
       (spread-white jg2))))
@@ -388,7 +417,7 @@
   [jg node]
   (let [jg2 (-> jg (assert-white node)
                 (spread-white))]
-    ;; if it didn't work out (no way to spread-white consistently, spread-black to make up for it
+    ;; if it didn't work out (no way to spread-white consistently), spread-black to make up for it
     (if (check-axioms jg2)
       jg2
       (spread-black jg2))))
