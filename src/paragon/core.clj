@@ -55,13 +55,6 @@
   [stroke-or-node]
   (if (keyword? stroke-or-node) (name stroke-or-node) (str stroke-or-node)))
 
-(defn uncertainty?
-  [stroke-or-node]
-  (let [snstr (jgstr stroke-or-node)]
-    (or (= "uncertainty-node" snstr)
-        (= "uncertainty-stroke" snstr)
-        (= "un" (subs snstr 0 (min (count snstr) 2))))))
-
 (defn consistent-if-black?
   [jg stroke-or-node]
   (or (empty? (get-in jg [:inconsistent stroke-or-node]))
@@ -90,13 +83,7 @@
   (let [inconsistent-edges (set (for [sn (keys (:inconsistent jg))
                                       sn-inc (get-in jg [:inconsistent sn])]
                                   (sort [sn sn-inc])))
-        g-uncertainty (-> (:graph jg)
-                          (graph/remove-nodes :uncertainty-stroke :uncertainty-node)
-                          ;; make all uncertainty node-specific strokes have label "?"
-                          (graphattr/add-attr-to-nodes
-                            :label "?" (filter #(= "un" (subs (jgstr %) 0 (min (count (jgstr %)) 2)))
-                                               (strokes jg))))
-        g-inc-edges (-> (apply graph/add-edges g-uncertainty inconsistent-edges)
+        g-inc-edges (-> (apply graph/add-edges (:graph jg) inconsistent-edges)
                         (graphattr/add-attr-to-edges :style :dotted inconsistent-edges)
                         (graphattr/add-attr-to-edges :arrowhead :none inconsistent-edges)
                         (graphattr/add-attr-to-edges :constraint :false inconsistent-edges))
@@ -191,8 +178,7 @@
   [jg]
   (every? (fn [stroke] (or (white? jg stroke)
                            (empty? (jgin jg stroke))
-                           (every? (fn [n] (and (node? jg n)
-                                                (or (uncertainty? n) (black? jg n))))
+                           (every? (fn [n] (and (node? jg n) (black? jg n)))
                                    (jgin jg stroke))))
           (strokes jg)))
 
@@ -205,12 +191,6 @@
                                                (white? jg in)))
                                  (jgin jg stroke))))
           (strokes jg)))
-
-(defn check-axiom-coloration-uncertainty
-  "Extra axiom: Both :uncertainty, :uncertainty-stroke are white."
-  [jg]
-  (every? (fn [sn] (white? jg sn))
-          (filter (fn [sn] (uncertainty? sn)) (concat (nodes jg) (strokes jg)))))
 
 (defn check-axiom-coloration-inconsistencies
   "Extra axiom: No two nodes/strokes of an inconsistent pair are black."
@@ -236,7 +216,6 @@
        (or (check-axiom-coloration-2 jg) (println "Fails Axiom of Coloration 2."))
        (or (check-axiom-coloration-3 jg) (println "Fails Axiom of Coloration 3."))
        (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))
-       (or (check-axiom-coloration-uncertainty jg) (println "Fails Axiom of Coloration - Uncertainty."))
        (or (check-axiom-coloration-inconsistencies jg) (println "Fails Axiom of Coloration - Inconsistencies."))))
 
 (defn check-axioms
@@ -256,7 +235,6 @@
          (check-axiom-coloration-2 jg)
          (check-axiom-coloration-3 jg)
          (check-axiom-coloration-4 jg)
-         (check-axiom-coloration-uncertainty jg)
          (check-axiom-coloration-inconsistencies jg))))
 
 (defn forall-just
@@ -279,24 +257,11 @@
   (let [stroke (format ".%s" (jgstr node))]
     (exists-just jg [stroke] node)))
 
-(defn add-uncertainty-to-node
-  [jg node]
-  (-> jg
-      (exists-just [:uncertainty-stroke] :uncertainty-node)
-      (forall-just [:uncertainty-node] (format "un%s" (jgstr node)))
-      (exists-just [(format "un%s" (jgstr node))] node)))
-
-(defn hypothesis
-  [jg node]
-  (-> jg
-      (premise node)
-      (add-uncertainty-to-node node)))
-
 (defn can-explain
   [jg explanantia explanandum]
   (assert (sequential? explanantia))
   (let [stroke (format "%s_%s" (str/join "+" (map jgstr explanantia)) (jgstr explanandum))]
-    (-> (reduce (fn [jg2 explanans] (hypothesis jg2 explanans)) jg explanantia)
+    (-> (reduce (fn [jg2 explanans] (premise jg2 explanans)) jg explanantia)
         (forall-just explanantia stroke)
         (exists-just [stroke] explanandum))))
 
@@ -339,8 +304,7 @@
         jg)
     ;; something to do (inconsistent), spread white
     (if-let [bad-stroke (first (filter (fn [s] (and (black? jg s)
-                                                    (or (some (fn [n] (and (not (uncertainty? n))
-                                                                           (white? jg n)))
+                                                    (or (some (fn [n] (white? jg n))
                                                               (jgin jg s))
                                                         (white? jg (first (jgout jg s))))))
                                        (strokes jg)))]
@@ -371,8 +335,7 @@
     ;;   or, it points to a black node with no white strokes; turn it black.
     ;; - bad-nodes: a node is white but has all black incoming strokes;
     ;;   or, one of its outgoing strokes is black; turn it black.
-    (let [bad-strokes (filter (fn [s] (and (not (uncertainty? s))
-                                           (white? jg s)
+    (let [bad-strokes (filter (fn [s] (and (white? jg s)
                                            (consistent-if-black? jg s)
                                            (or (and (not-empty (jgin jg s))
                                                     (every? (fn [n] (black? jg n))
@@ -381,8 +344,7 @@
                                                     (every? (fn [s2] (white? jg s2))
                                                             (jgin jg (first (jgout jg s))))))))
                               (strokes jg))
-          bad-nodes (filter (fn [n] (and (not (uncertainty? n))
-                                         (white? jg n)
+          bad-nodes (filter (fn [n] (and (white? jg n)
                                          (consistent-if-black? jg n)
                                          (or (some (fn [s] (black? jg s)) (jgin jg n))
                                              (some (fn [s] (black? jg s)) (jgout jg n)))))

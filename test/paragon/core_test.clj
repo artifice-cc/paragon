@@ -29,9 +29,9 @@
         jg-black-white-black (spread-black jg-white-black)
         jg-white-black-white-black (spread-white jg-black-white-black)]
     #_(visualize jg-expanded)
-    (visualize jg-white-black)
+    #_(visualize jg-white-black)
     (is (= #{:s1 :s2 :s3 :s4} (set (believed jg-asserted))))
-    (is (= #{:h1 :h3 :s1 :s2 :s3 :s4} (set (believed jg-white-black))))
+    (is (= #{:h1 :h3 :s1 :s2 :s3 :s4 :j3 :j4 :j2} (set (believed jg-white-black))))
     (is (= jg-white-black jg-black-white-black jg-white-black-white-black))))
 
 (deftest test-peyer
