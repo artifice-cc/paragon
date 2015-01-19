@@ -99,8 +99,10 @@
         g-inc-edges (-> (apply graph/add-edges g-uncertainty inconsistent-edges)
                         (graphattr/add-attr-to-edges :style :dotted inconsistent-edges)
                         (graphattr/add-attr-to-edges :arrowhead :none inconsistent-edges)
-                        (graphattr/add-attr-to-edges :constraint :false inconsistent-edges))]
-    (graphio/view g-inc-edges :node {:fillcolor :white :style :filled :fontname "sans"})))
+                        (graphattr/add-attr-to-edges :constraint :false inconsistent-edges))
+        g-node-labels (reduce (fn [g n] (graphattr/add-attr g n :label (jgstr n)))
+                              g-inc-edges (nodes jg))]
+    (graphio/view g-node-labels :node {:fillcolor :white :style :filled :fontname "sans"})))
 
 (defn check-axiom-neg1
   "Everything is black or white."
@@ -274,7 +276,7 @@
 
 (defn premise
   [jg node]
-  (let [stroke (format "_%s" (jgstr node))]
+  (let [stroke (format ".%s" (jgstr node))]
     (exists-just jg [stroke] node)))
 
 (defn add-uncertainty-to-node
@@ -291,11 +293,11 @@
       (add-uncertainty-to-node node)))
 
 (defn can-explain
-  [jg explanans explanandum]
-  (let [stroke (format "%s_%s" (jgstr explanans) (jgstr explanandum))]
-    (-> jg
-        (hypothesis explanans)
-        (forall-just [explanans] stroke)
+  [jg explanantia explanandum]
+  (assert (sequential? explanantia))
+  (let [stroke (format "%s_%s" (str/join "+" (map jgstr explanantia)) (jgstr explanandum))]
+    (-> (reduce (fn [jg2 explanans] (hypothesis jg2 explanans)) jg explanantia)
+        (forall-just explanantia stroke)
         (exists-just [stroke] explanandum))))
 
 (defn assert-color
