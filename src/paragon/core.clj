@@ -12,11 +12,14 @@
 
 (defn turn-off-debugging [] (swap! debugging? (constantly false)))
 
+(defn jgstr
+  [stroke-or-node]
+  (if (keyword? stroke-or-node) (name stroke-or-node) (str stroke-or-node)))
+
 (defn new-just-graph
   []
   {:types {}
    :coloring {}
-   :inconsistent {}
    :graph (graph/digraph)})
 
 (defn nodes
@@ -35,6 +38,12 @@
   [jg stroke-or-node]
   (get-in jg [:types stroke-or-node]))
 
+(defn bottom?
+  [stroke-or-node]
+  (let [s (jgstr stroke-or-node)]
+    (or (= "bottom" s)
+        (= "bot" (subs s 0 (min 3 (count s)))))))
+
 (defn white?
   [jg stroke-or-node]
   (= :white (jgcolor jg stroke-or-node)))
@@ -50,15 +59,6 @@
 (defn stroke?
   [jg stroke-or-node]
   (= :stroke (jgtype jg stroke-or-node)))
-
-(defn jgstr
-  [stroke-or-node]
-  (if (keyword? stroke-or-node) (name stroke-or-node) (str stroke-or-node)))
-
-(defn consistent-if-black?
-  [jg stroke-or-node]
-  (or (empty? (get-in jg [:inconsistent stroke-or-node]))
-      (not-any? (fn [sn-inc] (black? jg sn-inc)) (get-in jg [:inconsistent stroke-or-node]))))
 
 (defn believed
   "Returns black nodes."
@@ -80,16 +80,23 @@
 
 (defn visualize
   [jg]
-  (let [inconsistent-edges (set (for [sn (keys (:inconsistent jg))
-                                      sn-inc (get-in jg [:inconsistent sn])]
-                                  (sort [sn sn-inc])))
-        g-inc-edges (-> (apply graph/add-edges (:graph jg) inconsistent-edges)
-                        (graphattr/add-attr-to-edges :style :dotted inconsistent-edges)
-                        (graphattr/add-attr-to-edges :arrowhead :none inconsistent-edges)
-                        (graphattr/add-attr-to-edges :constraint :false inconsistent-edges))
+  (let [g (:graph jg)
+        g-nodes (-> g
+                    (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? jg %) (nodes jg)))
+                    (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? jg %) (nodes jg))))
+        g-strokes (-> g-nodes
+                      (graphattr/add-attr-to-nodes :shape :plain (strokes jg))
+                      (graphattr/add-attr-to-nodes :height 0.1 (strokes jg))
+                      (graphattr/add-attr-to-nodes :label "&nbsp;" (strokes jg))
+                      (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? jg %) (strokes jg)))
+                      (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? jg %) (strokes jg))))
         g-node-labels (reduce (fn [g n] (graphattr/add-attr g n :label (jgstr n)))
-                              g-inc-edges (nodes jg))]
-    (graphio/view g-node-labels :node {:fillcolor :white :style :filled :fontname "sans"})))
+                              g-strokes (nodes jg))
+        g-bottom (-> g-node-labels
+                     (graphattr/add-attr :bottom :label "&perp;")
+                     (graphattr/add-attr :bottom :fontsize "32")
+                     (graphattr/add-attr :bottom :shape :none))]
+    (graphio/view g-bottom :node {:fillcolor :white :style :filled :fontname "sans"})))
 
 (defn check-axiom-neg1
   "Everything is black or white."
@@ -191,16 +198,6 @@
                                                (white? jg in)))
                                  (jgin jg stroke))))
           (strokes jg)))
-
-(defn check-axiom-coloration-inconsistencies
-  "Extra axiom: No two nodes/strokes of an inconsistent pair are black."
-  [jg]
-  (every? (fn [sn] (or (empty? (get-in jg [:inconsistent sn]))
-                       (white? jg sn)
-                       ;; sn is black
-                       (not-any? (fn [sn-inc] (black? jg sn-inc)) (get-in jg [:inconsistent sn]))))
-          (keys (:inconsistent jg))))
-
 (defn check-axioms-debug
   [jg]
   (and (or (check-axiom-neg1 jg) (println "Fails Axiom -1."))
@@ -215,8 +212,7 @@
        (or (check-axiom-coloration-1 jg) (println "Fails Axiom of Coloration 1."))
        (or (check-axiom-coloration-2 jg) (println "Fails Axiom of Coloration 2."))
        (or (check-axiom-coloration-3 jg) (println "Fails Axiom of Coloration 3."))
-       (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))
-       (or (check-axiom-coloration-inconsistencies jg) (println "Fails Axiom of Coloration - Inconsistencies."))))
+       (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))))
 
 (defn check-axioms
   [jg]
@@ -234,8 +230,7 @@
          (check-axiom-coloration-1 jg)
          (check-axiom-coloration-2 jg)
          (check-axiom-coloration-3 jg)
-         (check-axiom-coloration-4 jg)
-         (check-axiom-coloration-inconsistencies jg))))
+         (check-axiom-coloration-4 jg))))
 
 (defn forall-just
   [jg nodes stroke]
@@ -248,7 +243,6 @@
   [jg strokes node]
   (reduce (fn [jg2 stroke] (-> jg2
                              (assoc-in [:types stroke] :stroke)
-                             (update-in [:graph] graphattr/add-attr stroke :shape :underline)
                              (update-in [:graph] graph/add-edges [stroke node])))
           (assoc-in jg [:types node] :node) strokes))
 
@@ -268,10 +262,7 @@
 (defn assert-color
   [jg stroke-or-node color]
   (when @debugging? (println "asserting" stroke-or-node "as" color))
-  (-> jg
-      (assoc-in [:coloring stroke-or-node] color)
-      (update-in [:graph] graphattr/add-attr stroke-or-node :fillcolor color)
-      (update-in [:graph] graphattr/add-attr stroke-or-node :fontcolor (if (= :black color) :white :black))))
+  (assoc-in jg [:coloring stroke-or-node] color))
 
 (defn assert-black
   [jg stroke-or-node]
@@ -282,19 +273,14 @@
   (assert-color jg stroke-or-node :white))
 
 (defn add-inconsistencies
-  "Indicate nodes that are inconsistent with a given node.
+  "Indicate nodes that are mutually inconsistent.
 
-  Usage example: (add-inconsistencies jg :node1 [:node4 :node5])"
-  [jg node node-inc-set]
-  (letfn [(set-inc [jgx n ns] (let [old-inc (get-in jgx [:inconsistent n] #{})]
-                                (assoc-in jgx [:inconsistent n] (set/union old-inc (set ns)))))]
-    (reduce (fn [jg2 n] (set-inc jg2 n [node]))
-            (set-inc jg node node-inc-set) node-inc-set)))
-
-(defn get-inconsistencies
-  "Return structure: {:node1 #{:node2 :node3} :node2 #{:node1 :node3} :node3 #{:node1 :node2}}"
-  [jg]
-  (:inconsistent jg))
+  Usage example: (add-inconsistencies jg [:node1 :node2 :node3])"
+  [jg nodes]
+  (let [botstroke (format "bot_%s" (str/join "-" (map jgstr nodes)))]
+    (-> jg
+        (forall-just nodes botstroke)
+        (exists-just [botstroke] :bottom))))
 
 (defn spread-white
   [jg]
@@ -336,7 +322,7 @@
     ;; - bad-nodes: a node is white but has all black incoming strokes;
     ;;   or, one of its outgoing strokes is black; turn it black.
     (let [bad-strokes (filter (fn [s] (and (white? jg s)
-                                           (consistent-if-black? jg s)
+                                           (not (bottom? s))
                                            (or (and (not-empty (jgin jg s))
                                                     (every? (fn [n] (black? jg n))
                                                             (jgin jg s)))
@@ -345,7 +331,7 @@
                                                             (jgin jg (first (jgout jg s))))))))
                               (strokes jg))
           bad-nodes (filter (fn [n] (and (white? jg n)
-                                         (consistent-if-black? jg n)
+                                         (not (bottom? n))
                                          (or (some (fn [s] (black? jg s)) (jgin jg n))
                                              (some (fn [s] (black? jg s)) (jgout jg n)))))
                             (nodes jg))]
