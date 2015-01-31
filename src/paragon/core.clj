@@ -325,31 +325,31 @@
 
 (defn spread-white-default-strategy
   "Guaranteed that bad-strokes or bad-nodes is not empty."
-  [jg bad-strokes bad-nodes]
+  [_ bad-strokes bad-nodes]
   (if (not-empty bad-strokes)
     (let [best-bad-stroke (first bad-strokes)]
       (when @debugging?
         (println "Choosing bad stroke:" best-bad-stroke))
-      (assert-white jg best-bad-stroke))
+      best-bad-stroke)
     (let [best-bad-node (if (some abducible? bad-nodes)
                           (first (filter abducible? bad-nodes))
                           (first bad-nodes))]
       (when @debugging?
         (println "Choosing bad node:" best-bad-node))
-      (assert-white jg best-bad-node))))
+      best-bad-node)))
 
 (defn spread-black-default-strategy
   "Guaranteed that bad-strokes or bad-nodes is not empty."
-  [jg bad-strokes bad-nodes]
+  [_ bad-strokes bad-nodes]
   (if (not-empty bad-strokes)
     (let [best-bad-stroke (first bad-strokes)]
       (when @debugging?
         (println "Choosing bad stroke:" best-bad-stroke))
-      (assert-black jg best-bad-stroke))
+      best-bad-stroke)
     (let [best-bad-node (first bad-nodes)]
       (when @debugging?
         (println "Choosing bad node:" best-bad-node))
-      (assert-black jg best-bad-node))))
+      best-bad-node)))
 
 (defn- spread-white
   [jg strategy]
@@ -373,7 +373,7 @@
         (println "Found bad strokes:" bad-strokes)
         (println "Found bad nodes:" bad-nodes))
       (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-        (recur (strategy jg bad-strokes bad-nodes) strategy)
+        (recur (assert-white jg (strategy jg bad-strokes bad-nodes)) strategy)
         (do (when @debugging? (println "Axioms failed in spread-white."))
             jg)))))
 
@@ -407,7 +407,7 @@
         (println "Found bad strokes:" bad-strokes)
         (println "Found bad nodes:" bad-nodes))
       (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-        (recur (strategy jg bad-strokes bad-nodes) strategy)
+        (recur (assert-black jg (strategy jg bad-strokes bad-nodes)) strategy)
         (do (when @debugging? (println "Axioms failed in spread-black."))
             jg)))))
 
