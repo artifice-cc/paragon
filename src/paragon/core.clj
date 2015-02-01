@@ -86,6 +86,10 @@
   [jg stroke-or-node]
   (graph/incoming (:graph jg) stroke-or-node))
 
+(defn hypothesis?
+  [jg node]
+  (graph/has-node? (:graph jg) (format "?%s" (jgstr node))))
+
 (defnp explainers
   [jg node]
   (let [ss (jgout jg node)
@@ -94,6 +98,12 @@
                           (set (mapcat #(jgin jg %) ss))))]
     ;; some outgoing node from some stroke that 'node' points to is a hyp node
     (filter (fn [n] (hyps (format "?%s" (jgstr n)))) ns)))
+
+(defnp explains
+  [jg node]
+  (filter (fn [n] (and (not= \? (first (seq (jgstr n))))
+                       (not (re-find #"\+" (jgstr n)))))
+          (set (mapcat #(jgin jg %) (jgin jg node)))))
 
 (defnp visualize
   [jg]

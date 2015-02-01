@@ -3,7 +3,7 @@
             [paragon.core :refer :all])
   (:require [taoensso.timbre.profiling :refer (profile)]))
 
-(deftest test-spread-black
+(deftest test-expand-explains
   #_(turn-on-debugging)
   (let [jg (-> (new-just-graph)
                (can-explain [:h1] [:s1])
@@ -18,10 +18,17 @@
         jg-expanded (expand jg [:s1 :s2 :s3 :s4])]
     #_(visualize jg-expanded)
     (is (= #{:s1 :s2 :s3 :s4 :h1 :h2 :j1} (set (believed jg-expanded))))
+    (is (hypothesis? jg :h1))
+    (is (hypothesis? jg :h2))
+    (is (hypothesis? jg :h3))
+    (is (not (hypothesis? jg :s1)))
     (is (= #{:h1 :h2} (set (explainers jg :s1))))
     (is (= #{:h1} (set (explainers jg :s2))))
     (is (= #{:h3} (set (explainers jg :s3))))
-    (is (= #{:h2 :h3} (set (explainers jg :s4))))))
+    (is (= #{:h2 :h3} (set (explainers jg :s4))))
+    (is (= #{:s1 :s2} (set (explains jg :h1))))
+    (is (= #{:s1 :s4} (set (explains jg :h2))))
+    (is (= #{:s3 :s4} (set (explains jg :h3))))))
 
 (deftest test-peyer
   #_(turn-on-debugging)
