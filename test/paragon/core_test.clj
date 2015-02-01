@@ -75,7 +75,6 @@
     #_(visualize jg-expanded)))
 
 (deftest test-random
-  #_(turn-on-timings)
   (let [premise-count 500
         premise-stroke-cardinality 100
         stroke-count 200

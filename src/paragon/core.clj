@@ -5,18 +5,12 @@
   (:require [loom.alg :as graphalg])
   (:require [loom.attr :as graphattr])
   (:require [loom.io :as graphio])
-  (:require [taoensso.timbre]))
-
-(taoensso.timbre/refer-timbre)
+  (:require [taoensso.timbre.profiling :refer [defnp]]))
 
 (def debugging? (atom false))
-(def timings? (atom false))
 
 (defn turn-on-debugging [] (swap! debugging? (constantly true)))
 (defn turn-off-debugging [] (swap! debugging? (constantly false)))
-
-(defn turn-on-timings [] (swap! timings? (constantly true)))
-(defn turn-off-timings [] (swap! timings? (constantly false)))
 
 (defn jgstr
   [stroke-or-node]
