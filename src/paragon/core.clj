@@ -410,7 +410,10 @@
           (println "Found bad strokes:" bad-strokes)
           (println "Found bad nodes:" bad-nodes))
         (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-          (recur (assert-white jg (strategy jg bad-strokes bad-nodes)))
+          (let [choice (strategy jg bad-strokes bad-nodes)]
+            (if choice
+              (recur (assert-white jg choice))
+              jg))
           (do (when @debugging? (println "Axioms failed in spread-white."))
               jg))))))
 
@@ -453,7 +456,10 @@
           (println "Found bad strokes:" bad-strokes)
           (println "Found bad nodes:" bad-nodes))
         (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-          (recur (assert-black jg (strategy jg bad-strokes bad-nodes)))
+          (let [choice (strategy jg bad-strokes bad-nodes)]
+            (if choice
+              (recur (assert-black jg choice))
+              jg))
           (do (when @debugging? (println "Axioms failed in spread-black."))
               jg))))))
 
