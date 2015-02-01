@@ -17,7 +17,11 @@
                (add-inconsistencies [:h1 :h2 :h3]))
         jg-expanded (expand jg [:s1 :s2 :s3 :s4])]
     #_(visualize jg-expanded)
-    (is (= #{:s1 :s2 :s3 :s4 :h1 :h2 :j1} (set (believed jg-expanded))))))
+    (is (= #{:s1 :s2 :s3 :s4 :h1 :h2 :j1} (set (believed jg-expanded))))
+    (is (= #{:h1 :h2} (set (explainers jg :s1))))
+    (is (= #{:h1} (set (explainers jg :s2))))
+    (is (= #{:h3} (set (explainers jg :s3))))
+    (is (= #{:h2 :h3} (set (explainers jg :s4))))))
 
 (deftest test-peyer
   #_(turn-on-debugging)
