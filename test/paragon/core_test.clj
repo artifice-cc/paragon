@@ -1,6 +1,7 @@
 (ns paragon.core-test
   (:require [clojure.test :refer :all]
-            [paragon.core :refer :all]))
+            [paragon.core :refer :all])
+  (:require [taoensso.timbre.profiling :refer (profile)]))
 
 (deftest test-spread-black
   #_(turn-on-debugging)
@@ -15,7 +16,7 @@
                (can-explain [:j2 :j3 :j4] [:h3])
                (add-inconsistencies [:h1 :h2 :h3]))
         jg-expanded (expand jg [:s1 :s2 :s3 :s4])]
-    (visualize jg-expanded)
+    #_(visualize jg-expanded)
     (is (= #{:s1 :s2 :s3 :s4 :h1 :h2 :j1} (set (believed jg-expanded))))))
 
 (deftest test-peyer
@@ -61,12 +62,36 @@
         jg-contract-e17-e16 (contract jg-contract-e16 [:E17])
         jg-contract-i4 (contract jg-expanded [:I4])
         jg-contract-i1-i4 (contract jg-contract-i4 [:I1])]
-    (is (check-axioms jg-expanded))
-    (is (check-axioms jg-contract-e16))
-    (is (check-axioms jg-contract-e17-e16))
+    (is (check-structure-axioms jg-expanded))
+    (is (check-color-axioms jg-expanded))
+    (is (check-structure-axioms jg-contract-e16))
+    (is (check-color-axioms jg-contract-e16))
+    (is (check-structure-axioms jg-contract-e17-e16))
+    (is (check-color-axioms jg-contract-e17-e16))
     (is (not ((set (believed jg-contract-e16)) :E16)))
     (is (not ((set (believed jg-contract-e17-e16)) :E17)))
     (is (not ((set (believed jg-contract-i4)) :I4)))
     (is (not ((set (believed jg-contract-i1-i4)) :I1)))
     #_(visualize jg-expanded)))
 
+(deftest test-random
+  #_(turn-on-timings)
+  (let [premise-count 500
+        premise-stroke-cardinality 100
+        stroke-count 200
+        expand-count 50
+        jg (reduce premise (new-just-graph) (range premise-count))
+        jg2 (reduce (fn [jg s] (forall-just jg (take (rand-int premise-stroke-cardinality)
+                                                     (shuffle (range premise-count)))
+                                            s))
+                    jg (range premise-count (+ premise-count stroke-count)))
+        jg3 (reduce (fn [jg [s n]] (exists-just jg [s] n))
+                    jg2 (map (fn [s n] [s n])
+                             (range premise-count (+ premise-count stroke-count))
+                             (range (+ premise-count stroke-count)
+                                    (+ premise-count stroke-count stroke-count))))]
+    (is (check-structure-axioms jg3))
+    (is (check-color-axioms jg3))
+    (profile :debug :check-structure-axioms (check-structure-axioms jg3))
+    (profile :debug :check-color-axioms (check-color-axioms jg3))
+    (profile :debug :expand (expand jg3 (take expand-count (shuffle (concat (nodes jg3) (strokes jg3))))))))

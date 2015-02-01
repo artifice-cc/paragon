@@ -4,13 +4,19 @@
   (:require [loom.graph :as graph])
   (:require [loom.alg :as graphalg])
   (:require [loom.attr :as graphattr])
-  (:require [loom.io :as graphio]))
+  (:require [loom.io :as graphio])
+  (:require [taoensso.timbre]))
+
+(taoensso.timbre/refer-timbre)
 
 (def debugging? (atom false))
+(def timings? (atom false))
 
 (defn turn-on-debugging [] (swap! debugging? (constantly true)))
-
 (defn turn-off-debugging [] (swap! debugging? (constantly false)))
+
+(defn turn-on-timings [] (swap! timings? (constantly true)))
+(defn turn-off-timings [] (swap! timings? (constantly false)))
 
 (defn jgstr
   [stroke-or-node]
@@ -86,7 +92,7 @@
   [jg stroke-or-node]
   (graph/incoming (:graph jg) stroke-or-node))
 
-(defn visualize
+(defnp visualize
   [jg]
   (let [g (:graph jg)
         g-nodes (-> g
@@ -106,7 +112,7 @@
                      (graphattr/add-attr :bottom :shape :none))]
     (graphio/view g-bottom :node {:fillcolor :white :style :filled :fontname "sans"})))
 
-(defn check-axiom-neg1
+(defnp check-axiom-neg1
   "Everything is black or white."
   [jg]
   (every? #{:white :black} (vals (:coloring jg))))
@@ -118,7 +124,7 @@
   [jg]
   true)
 
-(defn check-axiom-1
+(defnp check-axiom-1
   [jg]
   "Everything is either a node or a stroke."
   (every? #{:node :stroke} (vals (:types jg))))
@@ -130,7 +136,7 @@
   [jg]
   true)
 
-(defn check-axiom-3-and-4
+(defnp check-axiom-3-and-4
   "Strokes send arrows only to nodes. Nodes send arrows only to strokes."
   [jg]
   (every? (fn [[start end]]
@@ -139,18 +145,18 @@
                   :else nil))
           (graph/edges (:graph jg))))
 
-(defn check-axiom-5
+(defnp check-axiom-5
   "Every stroke sends an arrow to exactly one thing."
   [jg]
   (every? (fn [stroke] (= 1 (count (jgout jg stroke))))
           (strokes jg)))
 
-(defn check-axiom-6
+(defnp check-axiom-6
   "Arrowing is one-way."
   [jg]
   (graphalg/dag? (:graph jg)))
 
-(defn check-axiom-7
+(defnp check-axiom-7
   "If two strokes send arrows to the same thing, and the things from which one of them receives arrows are among those from which the other receives arrows, then those strokes are identical."
   [jg]
   (every? (fn [s] (every? (fn [s2] (= s s2))
@@ -165,13 +171,13 @@
                                           (strokes jg)))))
           (strokes jg)))
 
-(defn check-axiom-8
+(defnp check-axiom-8
   "Every node receives an arrow."
   [jg]
   (every? (fn [node] (not-empty (jgin jg node)))
           (nodes jg)))
 
-(defn check-axiom-coloration-1
+(defnp check-axiom-coloration-1
   "Every black node receives an arrow from some black inference stroke."
   [jg]
   (every? (fn [node] (or (white? jg node)
@@ -179,7 +185,7 @@
                                (jgin jg node))))
           (nodes jg)))
 
-(defn check-axiom-coloration-2
+(defnp check-axiom-coloration-2
   "Every white node receives arrows only from white inference strokes."
   [jg]
   (every? (fn [node] (or (black? jg node)
@@ -188,7 +194,7 @@
                                  (jgin jg node))))
           (nodes jg)))
 
-(defn check-axiom-coloration-3
+(defnp check-axiom-coloration-3
   "Every black inference stroke receives arrows (if any) only from black nodes."
   [jg]
   (every? (fn [stroke] (or (white? jg stroke)
@@ -197,7 +203,7 @@
                                    (jgin jg stroke))))
           (strokes jg)))
 
-(defn check-axiom-coloration-4
+(defnp check-axiom-coloration-4
   "Every white inference stroke that receives an arrow receives an arrow from some white node."
   [jg]
   (every? (fn [stroke] (or (black? jg stroke)
@@ -206,7 +212,8 @@
                                                (white? jg in)))
                                  (jgin jg stroke))))
           (strokes jg)))
-(defn check-axioms-debug
+
+(defn check-structure-axioms-debug
   [jg]
   (and (or (check-axiom-neg1 jg) (println "Fails Axiom -1."))
        (or (check-axiom-0 jg) (println "Fails Axiom 0."))
@@ -216,16 +223,19 @@
        (or (check-axiom-5 jg) (println "Fails Axiom 5."))
        (or (check-axiom-6 jg) (println "Fails Axiom 6."))
        (or (check-axiom-7 jg) (println "Fails Axiom 7."))
-       (or (check-axiom-8 jg) (println "Fails Axiom 8."))
-       (or (check-axiom-coloration-1 jg) (println "Fails Axiom of Coloration 1."))
+       (or (check-axiom-8 jg) (println "Fails Axiom 8."))))
+
+(defn check-color-axioms-debug
+  [jg]
+  (and (or (check-axiom-coloration-1 jg) (println "Fails Axiom of Coloration 1."))
        (or (check-axiom-coloration-2 jg) (println "Fails Axiom of Coloration 2."))
        (or (check-axiom-coloration-3 jg) (println "Fails Axiom of Coloration 3."))
        (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))))
 
-(defn check-axioms
+(defn check-structure-axioms
   [jg]
   (if @debugging?
-    (check-axioms-debug jg)
+    (check-structure-axioms-debug jg)
     (and (check-axiom-neg1 jg)
          (check-axiom-0 jg)
          (check-axiom-1 jg)
@@ -234,20 +244,25 @@
          (check-axiom-5 jg)
          (check-axiom-6 jg)
          (check-axiom-7 jg)
-         (check-axiom-8 jg)
-         (check-axiom-coloration-1 jg)
+         (check-axiom-8 jg))))
+
+(defn check-color-axioms
+  [jg]
+  (if @debugging?
+    (check-color-axioms-debug jg)
+    (and (check-axiom-coloration-1 jg)
          (check-axiom-coloration-2 jg)
          (check-axiom-coloration-3 jg)
          (check-axiom-coloration-4 jg))))
 
-(defn forall-just
+(defnp forall-just
   [jg nodes stroke]
   (reduce (fn [jg2 node] (-> jg2
                              (assoc-in [:types node] :node)
                              (update-in [:graph] graph/add-edges [node stroke])))
           (assoc-in jg [:types stroke] :stroke) nodes))
 
-(defn exists-just
+(defnp exists-just
   [jg strokes node]
   (reduce (fn [jg2 stroke] (-> jg2
                                (assoc-in [:types stroke] :stroke)
@@ -351,65 +366,83 @@
         (println "Choosing bad node:" best-bad-node))
       best-bad-node)))
 
-(defn- spread-white
-  [jg strategy]
-  (if (check-axioms jg)
-    ;; nothing to do, everything checks out
-    (do (when @debugging? (println "All axioms satisfied in spread-white."))
-        jg)
-    ;; something to do (inconsistent), spread white
-    (let [bad-strokes (filter (fn [s] (and (black? jg s)
-                                           (or (some (fn [n] (white? jg n)) (jgin jg s))
-                                               (white? jg (first (jgout jg s))))))
-                              (strokes jg))
-          bad-nodes (filter (fn [n] (and (black? jg n)
-                                         (or (every? (fn [s] (white? jg s)) (jgin jg n))
-                                             (some (fn [s] (and (white? jg s)
-                                                                (every? (fn [n2] (black? jg n2)) (jgin jg s))))
-                                                   (jgout jg n)))))
-                            (nodes jg))]
-      (when @debugging?
-        (println "Spreading white.")
-        (println "Found bad strokes:" bad-strokes)
-        (println "Found bad nodes:" bad-nodes))
-      (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-        (recur (assert-white jg (strategy jg bad-strokes bad-nodes)) strategy)
-        (do (when @debugging? (println "Axioms failed in spread-white."))
-            jg)))))
+(defnp spread-white-bad-strokes
+       [jg]
+       (filter (fn [s] (and (black? jg s)
+                            (or (some (fn [n] (white? jg n)) (jgin jg s))
+                                (white? jg (first (jgout jg s))))))
+               (strokes jg)))
 
-(defn- spread-black
+(defnp spread-white-bad-nodes
+       [jg]
+       (filter (fn [n] (and (black? jg n)
+                            (or (every? (fn [s] (white? jg s)) (jgin jg n))
+                                (some (fn [s] (and (white? jg s)
+                                                   (every? (fn [n2] (black? jg n2)) (jgin jg s))))
+                                      (jgout jg n)))))
+               (nodes jg)))
+
+(defn spread-white
   [jg strategy]
-  (if (check-axioms jg)
-    ;; nothing to do, everything checks out
-    (do (when @debugging? (println "All axioms satisfied in spread-black."))
-        jg)
-    ;; something to do (inconsistent), spread black.
-    ;; - bad-strokes: a stroke is white but has all black incoming nodes;
-    ;;   or, it points to a black node with no white strokes; turn it black.
-    ;; - bad-nodes: a node is white but has all black incoming strokes;
-    ;;   or, one of its outgoing strokes is black; turn it black.
-    (let [bad-strokes (filter (fn [s] (and (white? jg s)
-                                           (not (bottom? s))
-                                           (or (and (not-empty (jgin jg s))
-                                                    (every? (fn [n] (black? jg n))
-                                                            (jgin jg s)))
-                                               (and (black? jg (first (jgout jg s)))
-                                                    (every? (fn [s2] (white? jg s2))
-                                                            (jgin jg (first (jgout jg s))))))))
-                              (strokes jg))
-          bad-nodes (filter (fn [n] (and (white? jg n)
-                                         (not (bottom? n))
-                                         (or (some (fn [s] (black? jg s)) (jgin jg n))
-                                             (some (fn [s] (black? jg s)) (jgout jg n)))))
-                            (nodes jg))]
-      (when @debugging?
-        (println "Spreading black.")
-        (println "Found bad strokes:" bad-strokes)
-        (println "Found bad nodes:" bad-nodes))
-      (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-        (recur (assert-black jg (strategy jg bad-strokes bad-nodes)) strategy)
-        (do (when @debugging? (println "Axioms failed in spread-black."))
-            jg)))))
+  (loop [jg jg]
+    (if (check-color-axioms jg)
+      ;; nothing to do, everything checks out
+      (do (when @debugging? (println "All axioms satisfied in spread-white."))
+          jg)
+      ;; something to do (inconsistent), spread white
+      (let [bad-strokes (spread-white-bad-strokes jg)
+            bad-nodes (spread-white-bad-nodes jg)]
+        (when @debugging?
+          (println "Spreading white.")
+          (println "Found bad strokes:" bad-strokes)
+          (println "Found bad nodes:" bad-nodes))
+        (if (or (not-empty bad-strokes) (not-empty bad-nodes))
+          (recur (assert-white jg (strategy jg bad-strokes bad-nodes)))
+          (do (when @debugging? (println "Axioms failed in spread-white."))
+              jg))))))
+
+(defnp spread-black-bad-strokes
+       [jg]
+       (filter (fn [s] (and (white? jg s)
+                            (not (bottom? s))
+                            (or (and (not-empty (jgin jg s))
+                                     (every? (fn [n] (black? jg n))
+                                             (jgin jg s)))
+                                (and (black? jg (first (jgout jg s)))
+                                     (every? (fn [s2] (white? jg s2))
+                                             (jgin jg (first (jgout jg s))))))))
+               (strokes jg)))
+
+(defnp spread-black-bad-nodes
+       [jg]
+       (filter (fn [n] (and (white? jg n)
+                            (not (bottom? n))
+                            (or (some (fn [s] (black? jg s)) (jgin jg n))
+                                (some (fn [s] (black? jg s)) (jgout jg n)))))
+               (nodes jg)))
+
+(defn spread-black
+  [jg strategy]
+  (loop [jg jg]
+    (if (check-color-axioms jg)
+      ;; nothing to do, everything checks out
+      (do (when @debugging? (println "All axioms satisfied in spread-black."))
+          jg)
+      ;; something to do (inconsistent), spread black.
+      ;; - bad-strokes: a stroke is white but has all black incoming nodes;
+      ;;   or, it points to a black node with no white strokes; turn it black.
+      ;; - bad-nodes: a node is white but has all black incoming strokes;
+      ;;   or, one of its outgoing strokes is black; turn it black.
+      (let [bad-strokes (spread-black-bad-strokes jg)
+            bad-nodes (spread-black-bad-nodes jg)]
+        (when @debugging?
+          (println "Spreading black.")
+          (println "Found bad strokes:" bad-strokes)
+          (println "Found bad nodes:" bad-nodes))
+        (if (or (not-empty bad-strokes) (not-empty bad-nodes))
+          (recur (assert-black jg (strategy jg bad-strokes bad-nodes)))
+          (do (when @debugging? (println "Axioms failed in spread-black."))
+              jg))))))
 
 (defn expand
   [jg nodes & {:keys [white-strategy black-strategy]
@@ -421,7 +454,7 @@
                             jg nodes)
         jg-blackened (spread-black jg-asserted black-strategy)]
     ;; if it didn't work out (no way to spread-black consistently), spread-white to make up for it
-    (if (check-axioms jg-blackened)
+    (if (check-color-axioms jg-blackened)
       jg-blackened
       (spread-white jg-blackened white-strategy))))
 
@@ -435,6 +468,6 @@
                             jg nodes)
         jg-whitened (spread-white jg-asserted white-strategy)]
     ;; if it didn't work out (no way to spread-white consistently), spread-black to make up for it
-    (if (check-axioms jg-whitened)
+    (if (check-color-axioms jg-whitened)
       jg-whitened
       (spread-black jg-whitened black-strategy))))
