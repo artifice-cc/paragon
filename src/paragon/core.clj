@@ -14,7 +14,12 @@
 
 (defn jgstr
   [stroke-or-node]
-  (if (keyword? stroke-or-node) (name stroke-or-node) (str stroke-or-node)))
+  (cond (keyword? stroke-or-node)
+        (name stroke-or-node)
+        (map? stroke-or-node)
+        (str (:id stroke-or-node))
+        :else
+        (str stroke-or-node)))
 
 (defn new-just-graph
   []
