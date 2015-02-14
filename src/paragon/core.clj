@@ -35,6 +35,13 @@
   [jg]
   (map first (filter (fn [[_ t]] (= t :stroke)) (seq (:types jg)))))
 
+(defn remove-node-or-stroke
+  [jg node-or-stroke]
+  (-> jg
+      (update-in [:graph] graph/remove-nodes node-or-stroke)
+      (update-in [:types] dissoc node-or-stroke)
+      (update-in [:coloring] dissoc node-or-stroke)))
+
 (defn jgcolor
   [jg stroke-or-node]
   (get-in jg [:coloring stroke-or-node] :white))
@@ -177,17 +184,18 @@
 (defnp check-axiom-7
   "If two strokes send arrows to the same thing, and the things from which one of them receives arrows are among those from which the other receives arrows, then those strokes are identical."
   [jg]
-  (every? (fn [s] (every? (fn [s2] (= s s2))
-                          ;; find strokes s2 where s2's incoming arrows are subseteq of incoming arrows of s
-                          (filter (fn [s2]
-                                    (and (not-empty (jgin jg s))
-                                         (not-empty (jgin jg s2))
-                                         (every? (set (jgin jg s)) (jgin jg s2))))
-                                  ;; find strokes that have an arrow to the same node
-                                  (filter (fn [s2] (= (first (jgout jg s))
-                                                      (first (jgout jg s2))))
-                                          (strokes jg)))))
-          (strokes jg)))
+  (let [ss (strokes jg)]
+    (every? (fn [s] (every? (fn [s2] (= s s2))
+                            ;; find strokes s2 where s2's incoming arrows are subseteq of incoming arrows of s
+                            (filter (fn [s2]
+                                      (and (not-empty (jgin jg s))
+                                           (not-empty (jgin jg s2))
+                                           (every? (set (jgin jg s)) (jgin jg s2))))
+                                    ;; find strokes that have an arrow to the same node
+                                    (filter (fn [s2] (= (first (jgout jg s))
+                                                        (first (jgout jg s2))))
+                                            ss))))
+            ss)))
 
 (defnp check-axiom-8
   "Every node receives an arrow."
@@ -297,11 +305,11 @@
   (when @debugging? (println "asserting" stroke-or-node "as" color))
   (assoc-in jg [:coloring stroke-or-node] color))
 
-(defn- assert-black
+(defn assert-black
   [jg stroke-or-node]
   (assert-color jg stroke-or-node :black))
 
-(defn- assert-white
+(defn assert-white
   [jg stroke-or-node]
   (assert-color jg stroke-or-node :white))
 
@@ -469,12 +477,13 @@
               jg))))))
 
 (defn expand
-  [jg nodes & {:keys [white-strategy black-strategy]
+  [jg nodes & {:keys [white-strategy black-strategy abd?]
                :or {white-strategy spread-white-default-strategy
-                    black-strategy spread-black-default-strategy}}]
+                    black-strategy spread-black-default-strategy
+                    abd? false}}]
   (assert (sequential? nodes))
   (let [jg-asserted (reduce (fn [jg2 node]
-                              (assert-black jg2 (format ".%s" (jgstr node))))
+                              (assert-black jg2 (if abd? (format ".%s" (jgstr node)) node)))
                             jg nodes)
         jg-blackened (spread-black jg-asserted black-strategy)]
     ;; if it didn't work out (no way to spread-black consistently), spread-white to make up for it
@@ -483,12 +492,13 @@
       (spread-white jg-blackened white-strategy))))
 
 (defn contract
-  [jg nodes & {:keys [white-strategy black-strategy]
+  [jg nodes & {:keys [white-strategy black-strategy abd?]
                :or {white-strategy spread-white-default-strategy
-                    black-strategy spread-black-default-strategy}}]
+                    black-strategy spread-black-default-strategy
+                    abd? false}}]
   (assert (sequential? nodes))
   (let [jg-asserted (reduce (fn [jg2 node]
-                              (assert-white jg2 (format ".%s" (jgstr node))))
+                              (assert-white jg2 (if abd? (format ".%s" (jgstr node)) node)))
                             jg nodes)
         jg-whitened (spread-white jg-asserted white-strategy)]
     ;; if it didn't work out (no way to spread-white consistently), spread-black to make up for it
