@@ -130,7 +130,7 @@
                        (not (re-find #"\+" (jgstr n)))))
           (set (mapcat #(jgin jg %) (jgin jg node)))))
 
-(defnp visualize
+(defnp visualize-dot
   [jg]
   (let [g (:graph jg)
         g-nodes (-> g
@@ -143,12 +143,20 @@
                       (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? jg %) (strokes jg)))
                       (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? jg %) (strokes jg))))
         g-node-labels (reduce (fn [g n] (graphattr/add-attr g n :label (jgstr n)))
-                              g-strokes (nodes jg))
-        g-bottom (-> g-node-labels
-                     (graphattr/add-attr :bottom :label "&perp;")
-                     (graphattr/add-attr :bottom :fontsize "32")
-                     (graphattr/add-attr :bottom :shape :none))]
-    (graphio/view g-bottom :node {:fillcolor :white :style :filled :fontname "sans"})))
+                              g-strokes (nodes jg))]
+    ;; add bottom node properties (if bottom node exists)
+    (-> g-node-labels
+        (graphattr/add-attr :bottom :label "&perp;")
+        (graphattr/add-attr :bottom :fontsize "32")
+        (graphattr/add-attr :bottom :shape :none))))
+
+(defnp visualize
+  [jg]
+  (graphio/view (visualize-dot jg) :node {:fillcolor :white :style :filled :fontname "sans"}))
+
+(defnp save-svg
+  [jg fname]
+  (graphio/dot (visualize-dot jg) fname :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defnp check-axiom-neg1
   "Everything is black or white."
