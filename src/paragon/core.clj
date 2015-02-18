@@ -334,7 +334,6 @@
       (exists-just [(format ".?%s" (jgstr hyp))] (format "?%s" (jgstr hyp)))
       (forall-just [(format "?%s" (jgstr hyp))] (format ".%s" (jgstr hyp)))
       (exists-just [(format ".%s" (jgstr hyp))] hyp)
-      (forall-just [hyp] (format ".?%s" (jgstr hyp)))
       (assert-black (format ".?%s" (jgstr hyp)))
       (assert-black (format "?%s" (jgstr hyp)))))
 
@@ -344,7 +343,10 @@
   (reduce (fn [jg2 ev]
             (-> jg2
                 (premise ev)
-                (forall-just [ev] (format ".%s" (jgstr hyp)))))
+                ;; make the ?hyp node point to this new stroke, if there is a ?hyp node
+                (forall-just (if (hypothesis? jg ev)
+                               [ev (format "?%s" (jgstr ev))] [ev])
+                             (format ".%s" (jgstr hyp)))))
           jg explananda))
 
 (defn- can-explain-conjunction-hyp
@@ -357,7 +359,9 @@
         jg-abducibles (reduce (fn [jg2 hyp]
                                 (forall-just jg2 [(format "?%s" (jgstr hyp)) n] (format ".%s" (jgstr hyp))))
                               jg explanantia)
-        jg-evidence (reduce (fn [jg2 ev] (forall-just jg2 [ev] s))
+        jg-evidence (reduce (fn [jg2 ev] (forall-just jg2 (if (hypothesis? jg ev)
+                                                            [ev (format "?%s" (jgstr ev))] [ev])
+                                                      s))
                             jg-abducibles explananda)]
     (exists-just jg-evidence [s] n)))
 
@@ -377,7 +381,9 @@
   [jg nodes]
   (let [botstroke (format "bot_%s" (str/join "-" (map jgstr nodes)))]
     (-> jg
-        (forall-just nodes botstroke)
+        (forall-just (mapcat (fn [n] (if (graph/has-node? (:graph jg) (format "?%s" (jgstr n)))
+                                       [n (format "?%s" (jgstr n))] [n])) nodes)
+                     botstroke)
         (exists-just [botstroke] :bottom))))
 
 (defn spread-white-default-strategy

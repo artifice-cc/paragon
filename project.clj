@@ -1,4 +1,4 @@
-(defproject cc.artifice/paragon "0.8.6"
+(defproject cc.artifice/paragon "0.9.0"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
