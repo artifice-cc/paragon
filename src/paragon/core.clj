@@ -5,7 +5,9 @@
   (:require [loom.alg :as graphalg])
   (:require [loom.attr :as graphattr])
   (:require [loom.io :as graphio])
-  (:require [taoensso.timbre.profiling :refer [defnp]]))
+  (:require [clojure.java.shell :as shell])
+  (:require [taoensso.timbre.profiling :refer [defnp]])
+  (:import (java.io FileOutputStream)))
 
 (def debugging? (atom false))
 
@@ -150,13 +152,16 @@
         (graphattr/add-attr :bottom :fontsize "32")
         (graphattr/add-attr :bottom :shape :none))))
 
-(defnp visualize
+(defn visualize
   [jg]
   (graphio/view (visualize-dot jg) :node {:fillcolor :white :style :filled :fontname "sans"}))
 
-(defnp save-svg
+(defn save-pdf
   [jg fname]
-  (graphio/dot (visualize-dot jg) fname :node {:fillcolor :white :style :filled :fontname "sans"}))
+  (let [dot (graphio/dot-str (visualize-dot jg) :node {:fillcolor :white :style :filled :fontname "sans"})
+        {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
+    (with-open [w (FileOutputStream. fname)]
+      (.write w pdf))))
 
 (defnp check-axiom-neg1
   "Everything is black or white."

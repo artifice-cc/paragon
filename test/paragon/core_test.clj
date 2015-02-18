@@ -17,6 +17,7 @@
                (add-inconsistencies [:h1 :h2 :h3]))
         jg-expanded (expand jg [:s1 :s2 :s3 :s4])]
     #_(visualize jg-expanded)
+    #_(save-pdf jg-expanded "test.pdf")
     (is (= #{:s1 :s2 :s3 :s4 :h2 :h3 :j3 :j4} (set (believed jg-expanded))))
     (is (hypothesis? jg :h1))
     (is (hypothesis? jg :h2))
