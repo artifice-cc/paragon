@@ -61,6 +61,14 @@
   (+ (graph/in-degree (:graph jg) stroke-or-node)
      (graph/degree (:graph jg) stroke-or-node)))
 
+(defn in-degree
+  [jg stroke-or-node]
+  (graph/in-degree (:graph jg) stroke-or-node))
+
+(defn out-degree
+  [jg stroke-or-node]
+  (graph/degree (:graph jg) stroke-or-node))
+
 (defn abducible?
   [node]
   (= \? (first (seq (jgstr node)))))
