@@ -1,4 +1,4 @@
-(defproject cc.artifice/paragon "0.8.3"
+(defproject cc.artifice/paragon "0.8.4"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
@@ -6,4 +6,5 @@
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [cc.artifice/loom "0.1.3"]
                  [com.taoensso/timbre "3.3.1"]
-                 [org.clojure/data.csv "0.1.2"]])
+                 [org.clojure/data.csv "0.1.2"]
+                 [org.clojure/math.combinatorics "0.0.8"]])
