@@ -179,7 +179,9 @@
 (defnp check-axiom-6
   "Arrowing is one-way."
   [jg]
-  (graphalg/dag? (:graph jg)))
+  (every? (fn [[n-or-s1 n-or-s2]]
+            (not (graph/has-edge? (:graph jg) n-or-s2 n-or-s1)))
+          (graph/edges (:graph jg))))
 
 (defnp check-axiom-7
   "If two strokes send arrows to the same thing, and the things from which one of them receives arrows are among those from which the other receives arrows, then those strokes are identical."
@@ -300,7 +302,7 @@
   (let [stroke (format ".%s" (jgstr node))]
     (exists-just jg [stroke] node)))
 
-(defn- assert-color
+(defn assert-color
   [jg stroke-or-node color]
   (when @debugging? (println "asserting" stroke-or-node "as" color))
   (assoc-in jg [:coloring stroke-or-node] color))
@@ -319,6 +321,7 @@
       (exists-just [(format ".?%s" (jgstr hyp))] (format "?%s" (jgstr hyp)))
       (forall-just [(format "?%s" (jgstr hyp))] (format ".%s" (jgstr hyp)))
       (exists-just [(format ".%s" (jgstr hyp))] hyp)
+      (forall-just [hyp] (format ".?%s" (jgstr hyp)))
       (assert-black (format ".?%s" (jgstr hyp)))
       (assert-black (format "?%s" (jgstr hyp)))))
 
