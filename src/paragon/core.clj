@@ -56,6 +56,11 @@
     (or (= "bottom" s)
         (= "bot" (subs s 0 (min 3 (count s)))))))
 
+(defn degree
+  [jg stroke-or-node]
+  (+ (graph/in-degree (:graph jg) stroke-or-node)
+     (graph/degree (:graph jg) stroke-or-node)))
+
 (defn abducible?
   [node]
   (= \? (first (seq (jgstr node)))))

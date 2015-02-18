@@ -108,22 +108,22 @@
 
 (defn strategy-pref-fewest-links
   [jg bad-strokes bad-nodes]
-  (first (sort-by #(graph/degree (:graph jg) %) (concat bad-strokes bad-nodes))))
+  (first (sort-by #(degree jg %) (concat bad-strokes bad-nodes))))
 
 (defn strategy-pref-fewest-links-2
   [jg bad-strokes bad-nodes]
-  (first (sort-by (fn [s-or-n] (reduce + (map #(graph/degree (:graph jg) %)
+  (first (sort-by (fn [s-or-n] (reduce + (map #(degree jg %)
                                               (concat (graph/incoming (:graph jg) s-or-n)
                                                       (graph/neighbors (:graph jg) s-or-n)))))
                   (concat bad-strokes bad-nodes))))
 
 (defn strategy-pref-most-links
   [jg bad-strokes bad-nodes]
-  (last (sort-by #(graph/degree (:graph jg) %) (concat bad-strokes bad-nodes))))
+  (last (sort-by #(degree jg %) (concat bad-strokes bad-nodes))))
 
 (defn strategy-pref-most-links-2
   [jg bad-strokes bad-nodes]
-  (last (sort-by (fn [s-or-n] (reduce + (map #(graph/degree (:graph jg) %)
+  (last (sort-by (fn [s-or-n] (reduce + (map #(degree jg %)
                                               (concat (graph/incoming (:graph jg) s-or-n)
                                                       (graph/neighbors (:graph jg) s-or-n)))))
                   (concat bad-strokes bad-nodes))))
@@ -134,7 +134,10 @@
     "rand" strategy-rand
     "pref-stroke" strategy-pref-stroke
     "pref-node" strategy-pref-node
-    "degree" strategy-pref-fewest-links
+    "fewest" strategy-pref-fewest-links
+    "most" strategy-pref-most-links
+    "fbmw" strategy-pref-fewest-links
+    "mbfw" strategy-pref-most-links
     "degree2" strategy-pref-fewest-links-2))
 
 (defn find-white-strategy
@@ -143,12 +146,15 @@
     "rand" strategy-rand
     "pref-stroke" strategy-pref-stroke
     "pref-node" strategy-pref-node
-    "degree" strategy-pref-most-links
+    "fewest" strategy-pref-fewest-links
+    "most" strategy-pref-most-links
+    "fbmw" strategy-pref-most-links
+    "mbfw" strategy-pref-fewest-links
     "degree2" strategy-pref-most-links-2))
 
 (defn compare-contract-strategies
   []
-  (let [strategies ["rand" "pref-stroke" "pref-node" "degree" "degree2"]
+  (let [strategies ["rand" "pref-stroke" "pref-node" "fewest" "most" "fbmw" "mbfw" "degree2"]
         chances-split [0.7]
         chances-and [0.5]
         cases 1000
