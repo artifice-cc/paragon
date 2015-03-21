@@ -15,7 +15,8 @@
                (can-explain [:j1 :j2] [:h1])
                (can-explain [:j2 :j3 :j4] [:h3])
                (add-inconsistencies [:h1 :h2 :h3]))
-        jg-expanded (expand jg [:s1 :s2 :s3 :s4])]
+        jg-expanded (expand jg [:s1 :s2 :s3 :s4] :abd? true)]
+    #_(visualize jg)
     #_(visualize jg-expanded)
     #_(save-pdf jg-expanded "test.pdf")
     (is (= #{:s1 :s2 :s3 :s4 :h2 :h3 :j3 :j4} (set (believed jg-expanded))))

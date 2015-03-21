@@ -95,127 +95,144 @@
                    (nodes jg1)))))
 
 (defn strategy-rand
-  [_ bad-strokes bad-nodes]
-  (rand-nth (concat bad-strokes bad-nodes)))
+  [_ bad-nodes]
+  (rand-nth bad-nodes))
 
-(defn strategy-pref-stroke
-  [_ bad-strokes bad-nodes]
-  (if (empty? bad-strokes) (rand-nth bad-nodes) (rand-nth bad-strokes)))
+(defn strategy-pref-min-out-degree
+  [jg bad-nodes]
+  (first (sort-by #(out-degree jg %) bad-nodes)))
 
-(defn strategy-pref-node
-  [_ bad-strokes bad-nodes]
-  (if (empty? bad-nodes) (rand-nth bad-strokes) (rand-nth bad-nodes)))
-
-(defn strategy-pref-fewest-links
-  [jg bad-strokes bad-nodes]
-  (first (sort-by #(degree jg %) (concat bad-strokes bad-nodes))))
-
-(defn strategy-pref-fewest-links-2
-  [jg bad-strokes bad-nodes]
-  (first (sort-by (fn [s-or-n] (reduce + (map #(degree jg %)
-                                              (concat (graph/incoming (:graph jg) s-or-n)
-                                                      (graph/neighbors (:graph jg) s-or-n)))))
-                  (concat bad-strokes bad-nodes))))
-
-(defn strategy-pref-most-links
-  [jg bad-strokes bad-nodes]
-  (last (sort-by #(degree jg %) (concat bad-strokes bad-nodes))))
-
-(defn strategy-pref-most-links-2
-  [jg bad-strokes bad-nodes]
-  (last (sort-by (fn [s-or-n] (reduce + (map #(degree jg %)
-                                              (concat (graph/incoming (:graph jg) s-or-n)
-                                                      (graph/neighbors (:graph jg) s-or-n)))))
-                  (concat bad-strokes bad-nodes))))
-
-(defn find-black-strategy
-  [strat-name]
-  (case strat-name
-    "rand" strategy-rand
-    "pref-stroke" strategy-pref-stroke
-    "pref-node" strategy-pref-node
-    "fewest" strategy-pref-fewest-links
-    "most" strategy-pref-most-links
-    "fbmw" strategy-pref-fewest-links
-    "mbfw" strategy-pref-most-links
-    "degree2" strategy-pref-fewest-links-2))
+(defn strategy-pref-max-out-degree
+  [jg bad-nodes]
+  (last (sort-by #(out-degree jg %) bad-nodes)))
 
 (defn find-white-strategy
   [strat-name]
   (case strat-name
     "rand" strategy-rand
-    "pref-stroke" strategy-pref-stroke
-    "pref-node" strategy-pref-node
-    "fewest" strategy-pref-fewest-links
-    "most" strategy-pref-most-links
-    "fbmw" strategy-pref-most-links
-    "mbfw" strategy-pref-fewest-links
-    "degree2" strategy-pref-most-links-2))
+    "min-out-degree" strategy-pref-min-out-degree
+    "max-out-degree" strategy-pref-max-out-degree))
 
-(defn compare-contract-strategies
+(defn compare-contract-strategies-optimal
   []
-  (let [strategies ["rand" "pref-stroke" "pref-node" "fewest" "most" "fbmw" "mbfw" "degree2"]
-        chances-split [0.7]
-        chances-and [0.5]
-        cases 1000
+  (let [strategies ["rand" "min-out-degree" "max-out-degree"]
+        chances-split [0.25 0.5 0.75]
+        chances-and [0.25 0.5 0.75]
+        cases 2000
         i (atom 0)
-        total (* (count chances-split) (count chances-and) cases)]
+        total (* (count chances-split) (count chances-and) cases)
+        attempted (atom #{})]
     (profile
       :debug :compare-contract-strategies
       (doall (apply concat
                     (for [chance-split chances-split
                           chance-and chances-and
                           case (range cases)]
-                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 20)) chance-split chance-and)]
+                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 50)) chance-split chance-and)]
                         (swap! i inc)
-                        (if (or (empty? (nodes jg)) (> (count (concat (nodes jg) (strokes jg))) 19))
+                        (if (or (@attempted jg) (empty? (nodes jg)) (> (count (concat (nodes jg) (strokes jg))) 19))
                           []
-                          (let [jg-black (reduce (fn [jg n-or-s] (assert-color jg n-or-s :black))
-                                                 jg (concat (nodes jg) (strokes jg)))
-                                contract-ns [(first (shuffle (nodes jg)))]
-                                undecided (filter #(not ((set contract-ns) %)) (concat (nodes jg) (strokes jg)))
-                                total-colorings (for [c (combo/selections [:black :white] (count undecided))]
-                                                  (partition 2 (interleave undecided c)))
-                                _ (if (not-empty (nodes jg)) (println "Colorings:" (count total-colorings)))
-                                ;; only works for contraction:
-                                total-variations (filter identity
-                                                         (for [coloring total-colorings]
-                                                           (let [jg-start (reduce (fn [jg n] (assert-color jg n :white))
-                                                                                  jg-black contract-ns)
-                                                                 jg-new (reduce (fn [jg [n-or-s c]] (assert-color jg n-or-s c))
-                                                                                jg-start coloring)]
-                                                             (if (check-color-axioms jg-new)
-                                                               [jg-new (count-changes jg-black jg-new contract-ns)]))))
-                                min-changes (if (not-empty total-variations) (apply min (map second total-variations)))]
-                            (println (format "%d/%d" @i total) "contract:" contract-ns "min:" min-changes)
-                            (doall (filter
-                                     (fn [row] (not= 0 (:Changes row)))
-                                     (for [change-type [:contract]
-                                           strategy strategies]
-                                       (let [time-start (System/nanoTime)
-                                             black-strategy (find-black-strategy strategy)
-                                             white-strategy (find-white-strategy strategy)
-                                             jg-final (contract jg-black
-                                                                contract-ns
-                                                                :black-strategy black-strategy
-                                                                :white-strategy white-strategy)
-                                             changes (count-changes jg-black jg-final contract-ns)
-                                             change-pct (double (* 100.0 (/ changes (count (nodes jg)))))
-                                             time-diff (- (System/nanoTime) time-start)
-                                             results {:Strategy     strategy
-                                                      :ChangeType   (name change-type)
-                                                      :Changes      changes
-                                                      :ChangePct    change-pct
-                                                      :ChanceAnd    chance-and
-                                                      :ChanceSplit  chance-split
-                                                      :Case         case
-                                                      ;; (changes+1)/(min+1)
-                                                      :RatioMin     (double (/ (inc changes) (inc min-changes)))
-                                                      :Nodes        (count (nodes jg))
-                                                      :Strokes      (count (strokes jg))
-                                                      :Microseconds time-diff}]
-                                         (println "RatioMin:" (:RatioMin results))
-                                         results)))))))))))))
+                          (do
+                            (swap! attempted conj jg)
+                            (let [jg-black (reduce (fn [jg n-or-s] (assert-color jg n-or-s :black))
+                                                   jg (concat (nodes jg) (strokes jg)))
+                                  contract-ns [(first (shuffle (nodes jg)))]
+                                  undecided (filter #(not ((set contract-ns) %)) (concat (nodes jg) (strokes jg)))
+                                  total-colorings (for [c (combo/selections [:black :white] (count undecided))]
+                                                    (partition 2 (interleave undecided c)))
+                                  _ (if (not-empty (nodes jg)) (println "Colorings:" (count total-colorings)))
+                                  ;; only works for contraction:
+                                  total-variations (filter identity
+                                                           (for [coloring total-colorings]
+                                                             (let [jg-start (reduce (fn [jg n] (assert-color jg n :white))
+                                                                                    jg-black contract-ns)
+                                                                   jg-new (reduce (fn [jg [n-or-s c]] (assert-color jg n-or-s c))
+                                                                                  jg-start coloring)]
+                                                               (if (check-color-axioms jg-new)
+                                                                 [jg-new (count-changes jg-black jg-new contract-ns)]))))
+                                  min-changes (if (not-empty total-variations) (apply min (map second total-variations)))]
+                              (println (format "%d/%d" @i total) "chance-and" chance-and "chance-split" chance-split "contract:" contract-ns "min:" min-changes)
+                              (doall (filter
+                                       (fn [row] (not= 0 (:Changes row)))
+                                       (for [change-type [:contract]
+                                             strategy strategies]
+                                         (let [time-start (System/nanoTime)
+                                               white-strategy (find-white-strategy strategy)
+                                               jg-final (contract jg-black
+                                                                  contract-ns
+                                                                  :white-strategy white-strategy)
+                                               changes (count-changes jg-black jg-final contract-ns)
+                                               change-pct (double (* 100.0 (/ changes (count (nodes jg)))))
+                                               time-diff (- (System/nanoTime) time-start)
+                                               results {:Strategy     strategy
+                                                        :ChangeType   (name change-type)
+                                                        :Changes      changes
+                                                        :ChangePct    change-pct
+                                                        :ChanceAnd    chance-and
+                                                        :ChanceSplit  chance-split
+                                                        :Case         case
+                                                        ;; (changes+1)/(min+1)
+                                                        :RatioMin     (double (/ (inc changes) (inc min-changes)))
+                                                        :Nodes        (count (nodes jg))
+                                                        :Strokes      (count (strokes jg))
+                                                        :Microseconds time-diff}]
+                                           (println "RatioMin:" (:RatioMin results))
+                                           results))))))))))))))
+
+(defn compare-contract-strategies
+  []
+  (let [strategies ["rand" "min-out-degree" "max-out-degree"]
+        chances-split [0.25 0.50 0.75]
+        chances-and [0.25 0.50 0.75]
+        cases 2000
+        i (atom 0)
+        total (* (count chances-split) (count chances-and) cases)
+        attempted (atom #{})]
+    (profile
+      :debug :compare-contract-strategies
+      (doall (apply concat
+                    (for [chance-split chances-split
+                          chance-and chances-and
+                          case (range cases)]
+                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 200)) chance-split chance-and)]
+                        (swap! i inc)
+                        (if (or (@attempted jg) (empty? (nodes jg)))
+                          []
+                          (do
+                            (swap! attempted conj jg)
+                            (let [jg-black (reduce (fn [jg n-or-s] (assert-color jg n-or-s :black))
+                                                   jg (concat (nodes jg) (strokes jg)))
+                                  contract-ns [(first (shuffle (nodes jg)))]
+                                  strat-results (doall (filter
+                                                   (fn [row] (not= 0 (:Changes row)))
+                                                   (for [change-type [:contract]
+                                                         strategy strategies]
+                                                     (let [white-strategy (find-white-strategy strategy)
+                                                           time-start (System/nanoTime)
+                                                           jg-final (contract jg-black
+                                                                              contract-ns
+                                                                              :white-strategy white-strategy)
+                                                           time-diff (- (System/nanoTime) time-start)
+                                                           changes (count-changes jg-black jg-final contract-ns)
+                                                           change-pct (double (* 100.0 (/ changes (count (nodes jg)))))
+                                                           results {:Strategy     strategy
+                                                                    :ChangeType   (name change-type)
+                                                                    :Changes      changes
+                                                                    :ChangePct    change-pct
+                                                                    :ChanceAnd    chance-and
+                                                                    :ChanceSplit  chance-split
+                                                                    :Case         case
+                                                                    :Nodes        (count (nodes jg))
+                                                                    :Strokes      (count (strokes jg))
+                                                                    :Microseconds time-diff}]
+                                                       (println strategy "changes:" changes)
+                                                       results))))
+                                  min-changes (if (not-empty strat-results) (apply min (map :Changes strat-results)))]
+                              (println (format "%d/%d" @i total) "chance-and" chance-and "chance-split" chance-split "contract:" contract-ns "min:" min-changes)
+                              (map (fn [results] (assoc results :RatioMin ;; (changes+1)/(min+1)
+                                                                (double (/ (inc (:Changes results))
+                                                                           (inc min-changes)))))
+                                   strat-results)))))))))))
 
 (defn dump-csv
   [results fname]
@@ -232,5 +249,3 @@
                  (every? identity (map (fn [jg] (if (check-structure-axioms-debug jg)
                                                   true (do (visualize jg) false)))
                                        random-graphs))))))
-
-

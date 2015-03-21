@@ -6,8 +6,7 @@
   (:require [loom.attr :as graphattr])
   (:require [loom.io :as graphio])
   (:require [clojure.java.shell :as shell])
-  (:require [taoensso.timbre.profiling :refer [defnp]])
-  (:import (java.io FileOutputStream)))
+  (:require [taoensso.timbre.profiling :refer [defnp]]))
 
 (def debugging? (atom false))
 
@@ -51,12 +50,6 @@
 (defn jgtype
   [jg stroke-or-node]
   (get-in jg [:types stroke-or-node]))
-
-(defn bottom?
-  [stroke-or-node]
-  (let [s (jgstr stroke-or-node)]
-    (or (= "bottom" s)
-        (= "bot" (subs s 0 (min 3 (count s)))))))
 
 (defn degree
   [jg stroke-or-node]
@@ -160,7 +153,7 @@
   [jg fname]
   (let [dot (graphio/dot-str (visualize-dot jg) :node {:fillcolor :white :style :filled :fontname "sans"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
-    (with-open [w (FileOutputStream. fname)]
+    (with-open [w (java.io.FileOutputStream. fname)]
       (.write w pdf))))
 
 (defnp check-axiom-neg1
@@ -267,6 +260,11 @@
                                  (jgin jg stroke))))
           (strokes jg)))
 
+(defnp check-axiom-coloration-bottom
+  "The node 'bottom' is white."
+  [jg]
+  (or (not (node? jg :bottom)) (white? jg :bottom)))
+
 (defn check-structure-axioms-debug
   [jg]
   (and (or (check-axiom-neg1 jg) (println "Fails Axiom -1."))
@@ -284,7 +282,8 @@
   (and (or (check-axiom-coloration-1 jg) (println "Fails Axiom of Coloration 1."))
        (or (check-axiom-coloration-2 jg) (println "Fails Axiom of Coloration 2."))
        (or (check-axiom-coloration-3 jg) (println "Fails Axiom of Coloration 3."))
-       (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))))
+       (or (check-axiom-coloration-4 jg) (println "Fails Axiom of Coloration 4."))
+       (or (check-axiom-coloration-bottom jg) (println "Fails Axiom of Coloration Bottom."))))
 
 (defn check-structure-axioms
   [jg]
@@ -307,7 +306,8 @@
     (and (check-axiom-coloration-1 jg)
          (check-axiom-coloration-2 jg)
          (check-axiom-coloration-3 jg)
-         (check-axiom-coloration-4 jg))))
+         (check-axiom-coloration-4 jg)
+         (check-axiom-coloration-bottom jg))))
 
 (defnp forall-just
   [jg nodes stroke]
@@ -401,50 +401,43 @@
 
 (defn spread-white-default-strategy
   "Guaranteed that bad-strokes or bad-nodes is not empty."
-  [_ bad-strokes bad-nodes]
-  (if (not-empty bad-strokes)
-    (let [best-bad-stroke (first bad-strokes)]
-      (when @debugging?
-        (println "Choosing bad stroke:" best-bad-stroke))
-      best-bad-stroke)
-    (let [best-bad-node (if (some abducible? bad-nodes)
-                          (first (filter abducible? bad-nodes))
-                          (first bad-nodes))]
-      (when @debugging?
-        (println "Choosing bad node:" best-bad-node))
-      best-bad-node)))
-
-(defn spread-black-default-strategy
-  "Guaranteed that bad-strokes or bad-nodes is not empty."
-  [_ bad-strokes bad-nodes]
-  (if (not-empty bad-strokes)
-    (let [best-bad-stroke (first bad-strokes)]
-      (when @debugging?
-        (println "Choosing bad stroke:" best-bad-stroke))
-      best-bad-stroke)
-    (let [best-bad-node (first bad-nodes)]
-      (when @debugging?
-        (println "Choosing bad node:" best-bad-node))
-      best-bad-node)))
+  [_ bad-nodes]
+  (let [best-bad-node (if (some abducible? bad-nodes)
+                        (first (filter abducible? bad-nodes))
+                        (first bad-nodes))]
+    (when @debugging?
+      (println "Choosing bad node:" best-bad-node
+               "abducible?" (= best-bad-node (first (filter abducible? bad-nodes)))))
+    best-bad-node))
 
 (defnp spread-white-bad-strokes
-       [jg]
-       (filter (fn [s] (and (black? jg s)
-                            (or (some (fn [n] (white? jg n)) (jgin jg s))
-                                (white? jg (first (jgout jg s))))))
-               (strokes jg)))
+  "Bad stroke w.r.t. white: A stroke is black but points a white node, or
+  a stroke is black but some white node points to it."
+  [jg]
+  (filter (fn [s] (and (black? jg s)
+                       (or (white? jg (first (jgout jg s)))
+                           (some (fn [n] (white? jg n)) (jgin jg s)))))
+          (strokes jg)))
 
-(defnp spread-white-bad-nodes
-       [jg]
-       (filter (fn [n] (and (black? jg n)
-                            (or (every? (fn [s] (white? jg s)) (jgin jg n))
-                                (some (fn [s] (and (white? jg s)
-                                                   (every? (fn [n2] (black? jg n2)) (jgin jg s))))
-                                      (jgout jg n)))))
-               (nodes jg)))
+(defnp spread-white-bad-nodes-deterministic
+  "Bad node w.r.t. white (deterministic): A node is black but all of its incoming strokes are white."
+  [jg]
+  (filter (fn [n] (and (black? jg n)
+                       (every? (fn [s] (white? jg s)) (jgin jg n))))
+          (nodes jg)))
+
+(defnp spread-white-bad-nodes-nondeterministic
+  "Bad node w.r.t. white (non-deterministic): A node is black but points to a white stroke that
+  has only black nodes pointing to it."
+  [jg]
+  (filter (fn [n] (and (black? jg n)
+                       (some (fn [s] (and (white? jg s)
+                                          (every? (fn [n2] (black? jg n2)) (jgin jg s))))
+                             (jgout jg n))))
+          (nodes jg)))
 
 (defn spread-white
-  [jg strategy]
+  [jg white-strategy]
   (loop [jg jg]
     (if (check-color-axioms jg)
       ;; nothing to do, everything checks out
@@ -452,51 +445,51 @@
           jg)
       ;; something to do (inconsistent), spread white
       (let [bad-strokes (spread-white-bad-strokes jg)
-            bad-nodes (spread-white-bad-nodes jg)]
+            bad-nodes-deterministic (spread-white-bad-nodes-deterministic jg)
+            bad-nodes-nondeterministic (spread-white-bad-nodes-nondeterministic jg)]
         (when @debugging?
           (println "Spreading white.")
           (println "Found bad strokes:" bad-strokes)
-          (println "Found bad nodes:" bad-nodes))
-        (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-          (let [choice (strategy jg bad-strokes bad-nodes)]
-            (if choice
-              (recur (assert-white jg choice))
-              jg))
+          (println "Found bad nodes (deterministic):" bad-nodes-deterministic)
+          (println "Found bad nodes (non-deterministic):" bad-nodes-nondeterministic))
+        (cond
+          ;; if we have a bad stroke, just take care of it; no need for strategy
+          (not-empty bad-strokes)
+          (recur (assert-white jg (first bad-strokes)))
+          ;; if we have a deterministic bad node, just take care of it; no need for strategy
+          (not-empty bad-nodes-deterministic)
+          (recur (assert-white jg (first bad-nodes-deterministic)))
+          ;; if we have a non-deterministic bad node, employ the strategy
+          (not-empty bad-nodes-nondeterministic)
+          (recur (assert-white jg (white-strategy jg bad-nodes-nondeterministic)))
+          :else
           (do (when @debugging? (println "Axioms failed in spread-white."))
               jg))))))
 
 (defnp spread-black-bad-strokes
-       [jg]
-       (filter (fn [s] (and (white? jg s)
-                            (not (bottom? s))
-                            (or (and (not-empty (jgin jg s))
-                                     (every? (fn [n] (black? jg n))
-                                             (jgin jg s)))
-                                (and (black? jg (first (jgout jg s)))
-                                     (every? (fn [s2] (white? jg s2))
-                                             (jgin jg (first (jgout jg s))))))))
-               (strokes jg)))
+  "Bad stroke w.r.t. black: A stroke is white but has all incoming black nodes."
+  [jg]
+  (filter (fn [s] (and (white? jg s)
+                       (and (not-empty (jgin jg s))
+                            (every? (fn [n] (black? jg n))
+                                    (jgin jg s)))))
+          (strokes jg)))
 
 (defnp spread-black-bad-nodes
-       [jg]
-       (filter (fn [n] (and (white? jg n)
-                            (not (bottom? n))
-                            (or (some (fn [s] (black? jg s)) (jgin jg n))
-                                (some (fn [s] (black? jg s)) (jgout jg n)))))
-               (nodes jg)))
+  "Bad node w.r.t. black: A node is white but has some incoming black stroke."
+  [jg]
+  (filter (fn [n] (and (white? jg n)
+                       (some (fn [s] (black? jg s)) (jgin jg n))))
+          (nodes jg)))
 
 (defn spread-black
-  [jg strategy]
+  [jg]
   (loop [jg jg]
     (if (check-color-axioms jg)
       ;; nothing to do, everything checks out
       (do (when @debugging? (println "All axioms satisfied in spread-black."))
           jg)
       ;; something to do (inconsistent), spread black.
-      ;; - bad-strokes: a stroke is white but has all black incoming nodes;
-      ;;   or, it points to a black node with no white strokes; turn it black.
-      ;; - bad-nodes: a node is white but has all black incoming strokes;
-      ;;   or, one of its outgoing strokes is black; turn it black.
       (let [bad-strokes (spread-black-bad-strokes jg)
             bad-nodes (spread-black-bad-nodes jg)]
         (when @debugging?
@@ -504,39 +497,41 @@
           (println "Found bad strokes:" bad-strokes)
           (println "Found bad nodes:" bad-nodes))
         (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-          (let [choice (strategy jg bad-strokes bad-nodes)]
-            (if choice
-              (recur (assert-black jg choice))
-              jg))
+          (let [choice (first (concat bad-strokes bad-nodes))]
+            (recur (assert-black jg choice)))
           (do (when @debugging? (println "Axioms failed in spread-black."))
               jg))))))
 
-(defn expand
-  [jg nodes & {:keys [white-strategy black-strategy abd?]
-               :or {white-strategy spread-white-default-strategy
-                    black-strategy spread-black-default-strategy
-                    abd? false}}]
-  (assert (sequential? nodes))
-  (let [jg-asserted (reduce (fn [jg2 node]
-                              (assert-black jg2 (if abd? (format ".%s" (jgstr node)) node)))
-                            jg nodes)
-        jg-blackened (spread-black jg-asserted black-strategy)]
-    ;; if it didn't work out (no way to spread-black consistently), spread-white to make up for it
-    (if (check-color-axioms jg-blackened)
-      jg-blackened
-      (spread-white jg-blackened white-strategy))))
-
 (defn contract
-  [jg nodes & {:keys [white-strategy black-strategy abd?]
+  "Only colors white (upwards and downwards). A \"strategy\" is needed."
+  [jg nodes & {:keys [white-strategy abd?]
                :or {white-strategy spread-white-default-strategy
-                    black-strategy spread-black-default-strategy
                     abd? false}}]
   (assert (sequential? nodes))
   (let [jg-asserted (reduce (fn [jg2 node]
                               (assert-white jg2 (if abd? (format ".%s" (jgstr node)) node)))
                             jg nodes)
         jg-whitened (spread-white jg-asserted white-strategy)]
-    ;; if it didn't work out (no way to spread-white consistently), spread-black to make up for it
+    ;; if it didn't work out (no way to spread-white consistently), return nil
     (if (check-color-axioms jg-whitened)
       jg-whitened
-      (spread-black jg-whitened black-strategy))))
+      nil)))
+
+(defn expand
+  "Only colors black, and only downwards. A white-strategy is needed in case 'bottom' is turned black."
+  [jg nodes & {:keys [white-strategy abd?]
+               :or {white-strategy spread-white-default-strategy
+                    abd? false}}]
+  (assert (sequential? nodes))
+  (let [jg-asserted (reduce (fn [jg2 node]
+                              (assert-black jg2 (if abd? (format ".%s" (jgstr node)) node)))
+                            jg nodes)
+        jg-blackened (spread-black jg-asserted)]
+    (cond
+      (check-color-axioms jg-blackened)
+      jg-blackened
+      (black? jg-blackened :bottom)
+      (contract jg-blackened [:bottom] :white-strategy white-strategy :abd? false)
+      :else
+      nil)))
+
