@@ -6,7 +6,7 @@
             [loom.graph :as graph]
             [loom.alg :as alg]
             [clojure.math.combinatorics :as combo])
-  (:require [taoensso.timbre.profiling :refer (profile defnp)]
+  (:require [taoensso.timbre.profiling :refer (profile defnp p)]
             [clojure.set :as set]))
 
 (defnp split-vec
@@ -25,25 +25,32 @@
 (defnp remove-bad-stroke
        [jg]
        (let [ss (strokes jg)
-             bad-stroke (first (filter (fn [s] (not (every? (fn [s2] (= s s2))
-                                                            ;; find strokes s2 where s2's incoming arrows
+             bad-stroke (first (filter (fn [s] (some (fn [s2]
+                                                       (and (not= s s2)
+                                                            ;; find strokes s2 that have an arrow
+                                                            ;; to the same node
+                                                            (= (first (jgout jg s))
+                                                               (first (jgout jg s2)))
+                                                            ;; and where s2's incoming arrows
                                                             ;; are subseteq of incoming arrows of s
-                                                            (filter (fn [s2]
-                                                                      (and (not-empty (jgin jg s))
-                                                                           (not-empty (jgin jg s2))
-                                                                           (every? (set (jgin jg s)) (jgin jg s2))))
-                                                                    ;; find strokes that have an arrow to the same node
-                                                                    (filter (fn [s2] (= (first (jgout jg s))
-                                                                                        (first (jgout jg s2))))
-                                                                            ss)))))
+                                                            (not-empty (jgin jg s))
+                                                            (not-empty (jgin jg s2))
+                                                            (every? (set (jgin jg s)) (jgin jg s2))))
+                                                     ss))
                                        ss))]
          (when bad-stroke
            (remove-node-or-stroke jg bad-stroke))))
 
+(defnp remove-inaccessible
+  [jg]
+  (let [accessible (p :gen-random-andor-graph/traverse
+                      (set (alg/pre-traverse (graph/graph (:graph jg)) (first (shuffle (graph/nodes (:graph jg)))))))]
+    (reduce remove-node-or-stroke jg (filter #(not (accessible %)) (graph/nodes (:graph jg))))))
+
 (defnp gen-random-andor-graph
-  [node-count chance-split chance-and]
-  (let [nodes (vec (range node-count))
-        node-groups (split-vec nodes chance-split)
+  [node-count chance-split chance-and inconsistent-count]
+  (let [node-options (vec (range node-count))
+        node-groups (split-vec node-options chance-split)
         node-groups-squared (mapcat (fn [[ns1 ns2]] (split-vec (vec (concat ns1 ns2)) chance-split))
                                     node-groups)
         node-groups-cubed (mapcat (fn [[ns1 ns2]] (split-vec (vec (concat ns1 ns2)) chance-split))
@@ -64,24 +71,23 @@
                                           jg node-group2))
                                 jg node-group1)))
                     jg paired)
-        jg-premises (reduce (fn [jg n] (exists-just jg [(format "s%s" n)] n)) jg2
-                            (filter (fn [n] (empty? (graph/incoming (:graph jg2) n)))
-                                    (graph/nodes (:graph jg2))))
+        top-nodes (filter (fn [n] (empty? (graph/incoming (:graph jg2) n)))
+                          (nodes jg2))
+        jg-premises (reduce (fn [jg n] (exists-just jg [(format "s%s" n)] n))
+                            jg2 top-nodes)
+        jg-inconsistencies (apply add-inconsistencies jg-premises
+                                  (take inconsistent-count
+                                        (shuffle (for [n1 (nodes jg-premises)
+                                                       n2 (shuffle (nodes jg-premises))
+                                                       :when (not= n1 n2)]
+                                                   [n1 n2]))))
+        jg-accessible (remove-inaccessible jg-inconsistencies)
         ;; find strokes that fail axiom 7
-        jg-fixed (loop [jg jg-premises]
-                   (if-let [jg2 (remove-bad-stroke jg)]
-                     (recur jg2) jg))
-        accessible (alg/pre-traverse (graph/graph (:graph jg-fixed)) (first (shuffle (graph/nodes (:graph jg-fixed)))))]
-    #_(prn "accessible:" accessible)
-    #_(prn "not-accessible:" (set/difference (set (graph/nodes (:graph jg-fixed)))
-                                           (set accessible)))
-    #_(prn "nodes" nodes)
-    #_(prn "node-groups" (doall node-groups))
-    #_(prn "node-groups-squared" (doall node-groups-squared))
-    (reduce remove-node-or-stroke
-            jg-fixed
-            (set/difference (set (graph/nodes (:graph jg-fixed)))
-                            (set accessible)))))
+        jg-fixed (p :gen-random-andor-graph/fixed
+                    (loop [jg jg-accessible]
+                      (if-let [jg2 (remove-bad-stroke jg)]
+                        (recur jg2) jg)))]
+    (remove-inaccessible jg-fixed)))
 
 (defn count-changes
   [jg1 jg2 ignore]
@@ -113,6 +119,13 @@
     "min-out-degree" strategy-pref-min-out-degree
     "max-out-degree" strategy-pref-max-out-degree))
 
+(defn find-abduce-strategy
+  [strat-name]
+  (case strat-name
+    "rand" strategy-rand
+    "min-out-degree" strategy-pref-min-out-degree
+    "max-out-degree" strategy-pref-max-out-degree))
+
 (defn compare-contract-strategies-optimal
   []
   (let [strategies ["rand" "min-out-degree" "max-out-degree"]
@@ -128,7 +141,7 @@
                     (for [chance-split chances-split
                           chance-and chances-and
                           case (range cases)]
-                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 50)) chance-split chance-and)]
+                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 50)) chance-split chance-and 0)]
                         (swap! i inc)
                         (if (or (@attempted jg) (empty? (nodes jg)) (> (count (concat (nodes jg) (strokes jg))) 19))
                           []
@@ -162,7 +175,8 @@
                                                                   contract-ns
                                                                   :white-strategy white-strategy)
                                                changes (count-changes jg-black jg-final contract-ns)
-                                               change-pct (double (* 100.0 (/ changes (count (nodes jg)))))
+                                               change-pct (double (* 100.0 (/ changes (- (count (nodes jg))
+                                                                                         (count contract-ns)))))
                                                time-diff (- (System/nanoTime) time-start)
                                                results {:Strategy     strategy
                                                         :ChangeType   (name change-type)
@@ -194,7 +208,7 @@
                     (for [chance-split chances-split
                           chance-and chances-and
                           case (range cases)]
-                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 200)) chance-split chance-and)]
+                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 200)) chance-split chance-and 0)]
                         (swap! i inc)
                         (if (or (@attempted jg) (empty? (nodes jg)))
                           []
@@ -204,34 +218,109 @@
                                                    jg (concat (nodes jg) (strokes jg)))
                                   contract-ns [(first (shuffle (nodes jg)))]
                                   strat-results (doall (filter
-                                                   (fn [row] (not= 0 (:Changes row)))
-                                                   (for [change-type [:contract]
-                                                         strategy strategies]
-                                                     (let [white-strategy (find-white-strategy strategy)
-                                                           time-start (System/nanoTime)
-                                                           jg-final (contract jg-black
-                                                                              contract-ns
-                                                                              :white-strategy white-strategy)
-                                                           time-diff (- (System/nanoTime) time-start)
-                                                           changes (count-changes jg-black jg-final contract-ns)
-                                                           change-pct (double (* 100.0 (/ changes (count (nodes jg)))))
-                                                           results {:Strategy     strategy
-                                                                    :ChangeType   (name change-type)
-                                                                    :Changes      changes
-                                                                    :ChangePct    change-pct
-                                                                    :ChanceAnd    chance-and
-                                                                    :ChanceSplit  chance-split
-                                                                    :Case         case
-                                                                    :Nodes        (count (nodes jg))
-                                                                    :Strokes      (count (strokes jg))
-                                                                    :Microseconds time-diff}]
-                                                       (println strategy "changes:" changes)
-                                                       results))))
+                                                         (fn [row] (not= 0 (:Changes row)))
+                                                         (for [change-type [:contract]
+                                                               strategy strategies]
+                                                           (let [white-strategy (find-white-strategy strategy)
+                                                                 time-start (System/nanoTime)
+                                                                 jg-final (contract jg-black
+                                                                                    contract-ns
+                                                                                    :white-strategy white-strategy)
+                                                                 time-diff (- (System/nanoTime) time-start)
+                                                                 changes (count-changes jg-black jg-final contract-ns)
+                                                                 change-pct (double (* 100.0 (/ changes (- (count (nodes jg))
+                                                                                                           (count contract-ns)))))
+                                                                 results {:Strategy     strategy
+                                                                          :ChangeType   (name change-type)
+                                                                          :Changes      changes
+                                                                          :ChangePct    change-pct
+                                                                          :ChanceAnd    chance-and
+                                                                          :ChanceSplit  chance-split
+                                                                          :Case         case
+                                                                          :Nodes        (count (nodes jg))
+                                                                          :Strokes      (count (strokes jg))
+                                                                          :Microseconds time-diff}]
+                                                             (println strategy "changes:" changes)
+                                                             results))))
                                   min-changes (if (not-empty strat-results) (apply min (map :Changes strat-results)))]
                               (println (format "%d/%d" @i total) "chance-and" chance-and "chance-split" chance-split "contract:" contract-ns "min:" min-changes)
                               (map (fn [results] (assoc results :RatioMin ;; (changes+1)/(min+1)
                                                                 (double (/ (inc (:Changes results))
                                                                            (inc min-changes)))))
+                                   strat-results)))))))))))
+
+(defn compare-abduce-contract-strategies
+  []
+  (let [abduce-strategies ["rand" "min-out-degree" "max-out-degree"]
+        contract-strategies ["rand" "min-out-degree" "max-out-degree"]
+        chances-split [0.25 0.50 0.75]
+        chances-and [0.25 0.50 0.75]
+        inconsistent-counts [0 2 4 6 8]
+        cases 100
+        i (atom 0)
+        total (* (count chances-split) (count chances-and) (count inconsistent-counts) cases)
+        attempted (atom #{})]
+    (profile
+      :debug :compare-abduce-contract-strategies
+      (doall (apply concat
+                    (for [chance-split chances-split
+                          chance-and chances-and
+                          inconsistent-count inconsistent-counts
+                          case (range cases)]
+                      (let [jg (gen-random-andor-graph (+ 2 (rand-int 200)) chance-split chance-and inconsistent-count)]
+                        (swap! i inc)
+                        (if (or (@attempted jg) (empty? (nodes jg)))
+                          []
+                          (do
+                            (swap! attempted conj jg)
+                            (let [non-bottom-leaf-nodes (filter #(and (not= :bottom %)
+                                                                      (empty? (graph/neighbors (:graph jg) %)))
+                                                                (nodes jg))
+                                  abduce-ns (take (rand-int (count non-bottom-leaf-nodes))
+                                                  (shuffle non-bottom-leaf-nodes))
+                                  strat-results (doall (filter identity
+                                                               (for [abduce-strategy abduce-strategies
+                                                                     white-strategy contract-strategies]
+                                                                 (let [time-start (System/nanoTime)
+                                                                       jg-final (abduce jg
+                                                                                        abduce-ns
+                                                                                        :abduce-strategy (find-abduce-strategy abduce-strategy)
+                                                                                        :white-strategy (find-white-strategy white-strategy))
+                                                                       time-diff (- (System/nanoTime) time-start)]
+                                                                   (if (and (not-empty abduce-ns) jg-final)
+                                                                     (let [changes (count-changes jg jg-final abduce-ns)
+                                                                           change-pct (double (* 100.0 (/ changes (- (count (nodes jg))
+                                                                                                                     (count abduce-ns)))))
+                                                                           explained (count (filter #(black? jg-final %) abduce-ns))
+                                                                           explained-pct (double (* 100.0 (/ explained (count abduce-ns))))
+                                                                           results {:AbduceStrategy abduce-strategy
+                                                                                    :WhiteStrategy  white-strategy
+                                                                                    :Changes        changes
+                                                                                    :ChangePct      change-pct
+                                                                                    :Explained      explained
+                                                                                    :ExplainedPct   explained-pct
+                                                                                    :ChanceAnd      chance-and
+                                                                                    :ChanceSplit    chance-split
+                                                                                    :Inconsistent   inconsistent-count
+                                                                                    :Case           case
+                                                                                    :Nodes          (count (nodes jg))
+                                                                                    :Strokes        (count (strokes jg))
+                                                                                    :Microseconds   time-diff}]
+                                                                       (println "\tabduce" abduce-strategy "white" white-strategy
+                                                                                "changes:" changes "changepct:" change-pct
+                                                                                "inconsistent:" inconsistent-count
+                                                                                "explained:" explained "explainedpct:" explained-pct)
+                                                                       results))))))
+                                  min-changes (if (not-empty strat-results) (apply min (map :Changes strat-results)))
+                                  max-explained (if (not-empty strat-results) (apply max (map :Explained strat-results)))]
+                              (println (format "%d/%d" @i total) "chance-and" chance-and "chance-split" chance-split
+                                       "abduce count:" (count abduce-ns) "min-changes:" min-changes "max-explained:" max-explained)
+                              (map (fn [results] (assoc results :ChangedRatioMin ;; (changes+1)/(min+1)
+                                                                (double (/ (inc (:Changes results))
+                                                                           (inc min-changes)))
+                                                                :ExplainedRatioMax
+                                                                (double (/ (inc (:Explained results))
+                                                                           (inc max-explained)))))
                                    strat-results)))))))))))
 
 (defn dump-csv
@@ -244,7 +333,7 @@
 (deftest test-gen-random-andor-graph
   (let [random-graphs (profile :debug :gen-random-andor-graph
                                (doall (for [i (range 20)]
-                                        (gen-random-andor-graph (+ 2 (rand-int 100)) 0.5 0.5))))]
+                                        (gen-random-andor-graph (+ 2 (rand-int 100)) 0.5 0.5 4))))]
     (is (profile :debug :check-structure-axioms
                  (every? identity (map (fn [jg] (if (check-structure-axioms-debug jg)
                                                   true (do (visualize jg) false)))

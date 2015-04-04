@@ -64,14 +64,6 @@
   [jg stroke-or-node]
   (graph/degree (:graph jg) stroke-or-node))
 
-(defn abducible?
-  [node]
-  (= \? (first (seq (jgstr node)))))
-
-(defn conjunction?
-  [node]
-  (re-find #"\+" (jgstr node)))
-
 (defn white?
   [jg stroke-or-node]
   (= :white (jgcolor jg stroke-or-node)))
@@ -91,12 +83,12 @@
 (defn believed
   "Returns black nodes."
   [jg]
-  (filter (fn [n] (and (not (abducible? n)) (not (conjunction? n)) (black? jg n))) (nodes jg)))
+  (filter (fn [n] (black? jg n)) (nodes jg)))
 
 (defn disbelieved
   "Returns white nodes."
   [jg]
-  (filter (fn [n] (and (not (abducible? n)) (not (conjunction? n)) (white? jg n))) (nodes jg)))
+  (filter (fn [n] (white? jg n)) (nodes jg)))
 
 (defn jgout
   [jg stroke-or-node]
@@ -105,25 +97,6 @@
 (defn jgin
   [jg stroke-or-node]
   (graph/incoming (:graph jg) stroke-or-node))
-
-(defn hypothesis?
-  [jg node]
-  (graph/has-node? (:graph jg) (format "?%s" (jgstr node))))
-
-(defnp explainers
-  [jg node]
-  (let [ss (jgout jg node)
-        ns (set (mapcat #(jgout jg %) ss))
-        hyps (set (filter #(= \? (first (seq (jgstr %))))
-                          (set (mapcat #(jgin jg %) ss))))]
-    ;; some outgoing node from some stroke that 'node' points to is a hyp node
-    (filter (fn [n] (hyps (format "?%s" (jgstr n)))) ns)))
-
-(defnp explains
-  [jg node]
-  (filter (fn [n] (and (not= \? (first (seq (jgstr n))))
-                       (not (re-find #"\+" (jgstr n)))))
-          (set (mapcat #(jgin jg %) (jgin jg node)))))
 
 (defnp visualize-dot
   [jg]
@@ -324,9 +297,11 @@
           (assoc-in jg [:types node] :node) strokes))
 
 (defn premise
-  [jg node]
-  (let [stroke (format ".%s" (jgstr node))]
-    (exists-just jg [stroke] node)))
+  [jg & nodes]
+  (reduce (fn [jg2 n]
+            (let [stroke (format ".%s" (jgstr n))]
+              (exists-just jg2 [stroke] n)))
+          jg nodes))
 
 (defn assert-color
   [jg stroke-or-node color]
@@ -341,73 +316,52 @@
   [jg stroke-or-node]
   (assert-color jg stroke-or-node :white))
 
-(defn hypothesis
-  [jg hyp]
-  (-> jg
-      (exists-just [(format ".?%s" (jgstr hyp))] (format "?%s" (jgstr hyp)))
-      (forall-just [(format "?%s" (jgstr hyp))] (format ".%s" (jgstr hyp)))
-      (exists-just [(format ".%s" (jgstr hyp))] hyp)
-      (assert-black (format ".?%s" (jgstr hyp)))
-      (assert-black (format "?%s" (jgstr hyp)))))
-
 (defn- can-explain-single-hyp
-  "Link explananda to hyp via an intermediate stroke, and connect hyp's hypothesis ?* node."
+  "Link hyp to explananda via an intermediate stroke."
   [jg hyp explananda]
   (reduce (fn [jg2 ev]
-            (-> jg2
-                (premise ev)
-                ;; make the ?hyp node point to this new stroke, if there is a ?hyp node
-                (forall-just (if (hypothesis? jg ev)
-                               [ev (format "?%s" (jgstr ev))] [ev])
-                             (format ".%s" (jgstr hyp)))))
+            (let [stroke (format "%sEXP%s" (jgstr hyp) (jgstr ev))]
+              (-> jg2
+                  (forall-just [hyp] stroke)
+                  (exists-just [stroke] ev))))
           jg explananda))
 
 (defn- can-explain-conjunction-hyp
-  "Link explananda to a special conjunction node for the explanantia, which links to each node in the conjunction."
+  "Link each in explanatia to strokes that point to a special conjunction node (one for each explananda),
+   which then links to each explananda."
   [jg explanantia explananda]
-  (let [s (format "%s_%s"
-                  (str/join "+" (map jgstr explananda))
-                  (str/join "+" (map jgstr explanantia)))
-        n (str/join "+" (map jgstr explanantia))
-        jg-abducibles (reduce (fn [jg2 hyp]
-                                (forall-just jg2 [(format "?%s" (jgstr hyp)) n] (format ".%s" (jgstr hyp))))
-                              jg explanantia)
-        jg-evidence (reduce (fn [jg2 ev] (forall-just jg2 (if (hypothesis? jg ev)
-                                                            [ev (format "?%s" (jgstr ev))] [ev])
-                                                      s))
-                            jg-abducibles explananda)]
-    (exists-just jg-evidence [s] n)))
+  (reduce (fn [jg2 ev]
+            (let [stroke (format "%sEXP%s" (str/join "AND" (map jgstr explanantia)) (jgstr ev))
+                  jg-hyps-stroke (forall-just jg2 explanantia stroke)]
+              (exists-just jg-hyps-stroke [stroke] ev)))
+          jg explananda))
 
-(defn can-explain
+(defnp can-explain
   "The explananda, as a conjunction, justify each of the explanantia."
   [jg explanantia explananda]
   (assert (and (sequential? explanantia) (sequential? explananda)))
-  (let [jg-hyps (reduce (fn [jg hyp] (hypothesis jg hyp)) jg explanantia)]
-    (if (second explanantia)
-      (can-explain-conjunction-hyp jg-hyps explanantia explananda)
-      (can-explain-single-hyp jg-hyps (first explanantia) explananda))))
+  (if (second explanantia)
+    (can-explain-conjunction-hyp jg explanantia explananda)
+    (can-explain-single-hyp jg (first explanantia) explananda)))
 
-(defn add-inconsistencies
+(defnp add-inconsistencies
   "Indicate nodes that cannot all be simultaneously believed.
 
-  Usage example: (add-inconsistencies jg [:node1 :node2 :node3])"
-  [jg nodes]
-  (let [botstroke (format "bot_%s" (str/join "-" (map jgstr nodes)))]
-    (-> jg
-        (forall-just (mapcat (fn [n] (if (graph/has-node? (:graph jg) (format "?%s" (jgstr n)))
-                                       [n (format "?%s" (jgstr n))] [n])) nodes)
-                     botstroke)
-        (exists-just [botstroke] :bottom))))
+  Usage example: (add-inconsistencies jg [:node1 :node2 :node3] [:node2 :node3] ...)"
+  [jg & nodesets]
+  (reduce (fn [jg2 nodes]
+            (let [botstroke (format "bot_%s" (str/join "-" (map jgstr nodes)))]
+              (-> jg2
+                  (forall-just nodes botstroke)
+                  (exists-just [botstroke] :bottom))))
+          jg nodesets))
 
 (defn spread-white-default-strategy
-  "Guaranteed that bad-strokes or bad-nodes is not empty."
+  "Guaranteed that bad-nodes is not empty."
   [_ bad-nodes]
-  (let [best-bad-node (if (some abducible? bad-nodes)
-                        (first (filter abducible? bad-nodes))
-                        (first bad-nodes))]
+  (let [best-bad-node (first (sort-by jgstr bad-nodes))]
     (when @debugging?
-      (println "Choosing bad node:" best-bad-node
-               "abducible?" (= best-bad-node (first (filter abducible? bad-nodes)))))
+      (println "Choosing bad node:" best-bad-node))
     best-bad-node))
 
 (defnp spread-white-bad-strokes
@@ -436,7 +390,7 @@
                              (jgout jg n))))
           (nodes jg)))
 
-(defn spread-white
+(defnp spread-white
   [jg white-strategy]
   (loop [jg jg]
     (if (check-color-axioms jg)
@@ -444,26 +398,88 @@
       (do (when @debugging? (println "All axioms satisfied in spread-white."))
           jg)
       ;; something to do (inconsistent), spread white
-      (let [bad-strokes (spread-white-bad-strokes jg)
-            bad-nodes-deterministic (spread-white-bad-nodes-deterministic jg)
-            bad-nodes-nondeterministic (spread-white-bad-nodes-nondeterministic jg)]
+      (let [bad-strokes (delay (spread-white-bad-strokes jg))
+            bad-nodes-deterministic (delay (spread-white-bad-nodes-deterministic jg))
+            bad-nodes-nondeterministic (delay (spread-white-bad-nodes-nondeterministic jg))]
         (when @debugging?
           (println "Spreading white.")
-          (println "Found bad strokes:" bad-strokes)
-          (println "Found bad nodes (deterministic):" bad-nodes-deterministic)
-          (println "Found bad nodes (non-deterministic):" bad-nodes-nondeterministic))
+          (println "Found bad strokes:" @bad-strokes)
+          (println "Found bad nodes (deterministic):" @bad-nodes-deterministic)
+          (println "Found bad nodes (non-deterministic):" @bad-nodes-nondeterministic))
         (cond
-          ;; if we have a bad stroke, just take care of it; no need for strategy
-          (not-empty bad-strokes)
-          (recur (assert-white jg (first bad-strokes)))
-          ;; if we have a deterministic bad node, just take care of it; no need for strategy
-          (not-empty bad-nodes-deterministic)
-          (recur (assert-white jg (first bad-nodes-deterministic)))
+          ;; if we have bad strokes, just take care of them; no need for strategy
+          ;; or, if we have deterministic bad nodes, just take care of them; no need for strategy
+          (or (not-empty @bad-strokes) (not-empty @bad-nodes-deterministic))
+          (recur (reduce assert-white jg (concat @bad-strokes @bad-nodes-deterministic)))
           ;; if we have a non-deterministic bad node, employ the strategy
-          (not-empty bad-nodes-nondeterministic)
-          (recur (assert-white jg (white-strategy jg bad-nodes-nondeterministic)))
+          (not-empty @bad-nodes-nondeterministic)
+          (recur (assert-white jg (white-strategy jg @bad-nodes-nondeterministic)))
           :else
           (do (when @debugging? (println "Axioms failed in spread-white."))
+              jg))))))
+
+(defn spread-abduce-default-strategy
+  "Guaranteed that bad-nodes is not empty."
+  [_ bad-nodes]
+  (let [best-bad-node (first (sort-by jgstr bad-nodes))]
+    (when @debugging?
+      (println "Choosing bad node:" best-bad-node))
+    best-bad-node))
+
+(defnp spread-abduce-bad-strokes
+  "Bad stroke w.r.t. abduction: A stroke is white but points to a black node, or
+  its white and all its incoming nodes are black."
+  [jg]
+  (filter (fn [s] (and (white? jg s)
+                       (or (black? jg (first (jgout jg s)))
+                           (and (not-empty (jgin jg s))
+                                (every? (fn [n] (black? jg n))
+                                        (jgin jg s))))))
+          (strokes jg)))
+
+(defnp spread-abduce-bad-nodes-deterministic
+  "Bad node w.r.t. abduction (deterministic): A node is white but is pointed to by a black stroke."
+  [jg]
+  (filter (fn [n] (and (white? jg n)
+                       (some (fn [s] (black? jg s)) (jgin jg n))))
+          (nodes jg)))
+
+(defnp spread-abduce-bad-nodes-nondeterministic
+  "Bad node w.r.t. abduction (non-deterministic): A node is white but points to a black stroke that
+  has only white nodes pointing to it."
+  [jg]
+  (filter (fn [n] (and (white? jg n)
+                       (some (fn [s] (and (black? jg s)
+                                          (every? (fn [n2] (white? jg n2)) (jgin jg s))))
+                             (jgout jg n))))
+          (nodes jg)))
+
+(defnp spread-abduce
+  [jg abduce-strategy]
+  (loop [jg jg]
+    (if (check-color-axioms jg)
+      ;; nothing to do, everything checks out
+      (do (when @debugging? (println "All axioms satisfied in spread-abduce."))
+          jg)
+      ;; something to do (inconsistent), spread abductively
+      (let [bad-strokes (delay (spread-abduce-bad-strokes jg))
+            bad-nodes-deterministic (delay (spread-abduce-bad-nodes-deterministic jg))
+            bad-nodes-nondeterministic (delay (spread-abduce-bad-nodes-nondeterministic jg))]
+        (when @debugging?
+          (println "Spreading abductively.")
+          (println "Found bad strokes:" @bad-strokes)
+          (println "Found bad nodes (deterministic):" @bad-nodes-deterministic)
+          (println "Found bad nodes (non-deterministic):" @bad-nodes-nondeterministic))
+        (cond
+          ;; if we have bad strokes, just take care of them; no need for strategy
+          ;; or, if we have deterministic bad nodes, just take care of them; no need for strategy
+          (or (not-empty @bad-strokes) (not-empty @bad-nodes-deterministic))
+          (recur (reduce assert-black jg (concat @bad-strokes @bad-nodes-deterministic)))
+          ;; if we have a non-deterministic bad node, employ the strategy
+          (not-empty @bad-nodes-nondeterministic)
+          (recur (assert-black jg (abduce-strategy jg @bad-nodes-nondeterministic)))
+          :else
+          (do (when @debugging? (println "Axioms failed in spread-abduce."))
               jg))))))
 
 (defnp spread-black-bad-strokes
@@ -482,7 +498,7 @@
                        (some (fn [s] (black? jg s)) (jgin jg n))))
           (nodes jg)))
 
-(defn spread-black
+(defnp spread-black
   [jg]
   (loop [jg jg]
     (if (check-color-axioms jg)
@@ -497,13 +513,13 @@
           (println "Found bad strokes:" bad-strokes)
           (println "Found bad nodes:" bad-nodes))
         (if (or (not-empty bad-strokes) (not-empty bad-nodes))
-          (let [choice (first (concat bad-strokes bad-nodes))]
-            (recur (assert-black jg choice)))
+          (let [to-assert-black (concat bad-strokes bad-nodes)]
+            (recur (reduce assert-black jg to-assert-black)))
           (do (when @debugging? (println "Axioms failed in spread-black."))
               jg))))))
 
-(defn contract
-  "Only colors white (upwards and downwards). A \"strategy\" is needed."
+(defnp contract
+  "Only colors black (upwards and downwards). A \"strategy\" is needed. Uses white-strategy for now."
   [jg nodes & {:keys [white-strategy abd?]
                :or {white-strategy spread-white-default-strategy
                     abd? false}}]
@@ -517,21 +533,36 @@
       jg-whitened
       nil)))
 
-(defn expand
-  "Only colors black, and only downwards. A white-strategy is needed in case 'bottom' is turned black."
-  [jg nodes & {:keys [white-strategy abd?]
-               :or {white-strategy spread-white-default-strategy
-                    abd? false}}]
+(defnp abduce
+  "Only colors black (upwards and downwards). A \"strategy\" is needed."
+  [jg nodes & {:keys [abduce-strategy white-strategy]
+               :or {abduce-strategy spread-abduce-default-strategy
+                    white-strategy spread-white-default-strategy}}]
   (assert (sequential? nodes))
-  (let [jg-asserted (reduce (fn [jg2 node]
-                              (assert-black jg2 (if abd? (format ".%s" (jgstr node)) node)))
-                            jg nodes)
+  (let [jg-asserted (reduce assert-black jg nodes)
+        jg-blackened (spread-abduce jg-asserted abduce-strategy)]
+    ;; if it didn't work out (no way to spread-black consistently), return nil
+    (cond
+      (check-color-axioms jg-blackened)
+      jg-blackened
+      (black? jg-blackened :bottom)
+      (contract jg-blackened [:bottom] :white-strategy white-strategy)
+      :else
+      nil)))
+
+(defnp expand
+  "Only colors black, and only downwards, except when 'bottom' is colored black.
+   A white-strategy is needed in case 'bottom' is turned black and contraction is required."
+  [jg nodes & {:keys [white-strategy]
+               :or {white-strategy spread-white-default-strategy}}]
+  (assert (sequential? nodes))
+  (let [jg-asserted (reduce assert-black jg nodes)
         jg-blackened (spread-black jg-asserted)]
     (cond
       (check-color-axioms jg-blackened)
       jg-blackened
       (black? jg-blackened :bottom)
-      (contract jg-blackened [:bottom] :white-strategy white-strategy :abd? false)
+      (contract jg-blackened [:bottom] :white-strategy white-strategy)
       :else
       nil)))
 

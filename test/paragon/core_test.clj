@@ -14,27 +14,19 @@
                (can-explain [:h3] [:s4])
                (can-explain [:j1 :j2] [:h1])
                (can-explain [:j2 :j3 :j4] [:h3])
+               (premise :j1 :j2 :j3 :j4 :h2)
                (add-inconsistencies [:h1 :h2 :h3]))
-        jg-expanded (expand jg [:s1 :s2 :s3 :s4] :abd? true)]
+        jg-abduced (abduce jg [:s1 :s2 :s3 :s4])]
     #_(visualize jg)
-    #_(visualize jg-expanded)
+    #_(visualize jg-abduced)
     #_(save-pdf jg-expanded "test.pdf")
-    (is (= #{:s1 :s2 :s3 :s4 :h2 :h3 :j3 :j4} (set (believed jg-expanded))))
-    (is (hypothesis? jg :h1))
-    (is (hypothesis? jg :h2))
-    (is (hypothesis? jg :h3))
-    (is (not (hypothesis? jg :s1)))
-    (is (= #{:h1 :h2} (set (explainers jg :s1))))
-    (is (= #{:h1} (set (explainers jg :s2))))
-    (is (= #{:h3} (set (explainers jg :s3))))
-    (is (= #{:h2 :h3} (set (explainers jg :s4))))
-    (is (= #{:s1 :s2} (set (explains jg :h1))))
-    (is (= #{:s1 :s4} (set (explains jg :h2))))
-    (is (= #{:s3 :s4} (set (explains jg :h3))))))
+    (is (= #{:h1 :h2 :j1 :j2 :s1 :s2 :s4} (set (believed jg-abduced))))))
 
 (deftest test-peyer
   #_(turn-on-debugging)
   (let [jg (-> (new-just-graph)
+               (premise :I1 :G1 :G6 :G4 :G5 :I2 :G3 :I3 :G1 :I4 :I4a :G2 :I5
+                        :I6 :G7 :I7 :G8 :I8)
                (can-explain [:I1] [:E1])
                (can-explain [:G1] [:E1])
                (can-explain [:G6] [:E2])
@@ -60,15 +52,9 @@
                (can-explain [:I1] [:E14])
                (can-explain [:I1] [:E16])
                (can-explain [:I8] [:E17])
-               ;; TODO check these inconsistencies
-               (add-inconsistencies [:G1 :I1])
-               (add-inconsistencies [:G1 :I8])
-               (add-inconsistencies [:I1 :I8])
-               (add-inconsistencies [:G2 :I5])
-               (add-inconsistencies [:G3 :I3])
-               (add-inconsistencies [:G5 :I2])
-               (add-inconsistencies [:G7 :I7]))
-        jg-expanded (expand jg [:E1 :E2 :E3 :E4 :E5 :E6 :E7
+               (add-inconsistencies [:G1 :I1] [:G1 :I8] [:I1 :I8]
+                                    [:G2 :I5] [:G3 :I3] [:G5 :I2] [:G7 :I7]))
+        jg-expanded (abduce jg [:E1 :E2 :E3 :E4 :E5 :E6 :E7
                                 :E8 :E9 :E10 :E11 :E12 :E13
                                 :E14 :E15 :E16 :E17])
         jg-contract-e16 (contract jg-expanded [:E16])
@@ -77,22 +63,24 @@
         jg-contract-i1-i4 (contract jg-contract-i4 [:I1])]
     (is (check-structure-axioms jg-expanded))
     (is (check-color-axioms jg-expanded))
+    (is (= #{:E10 :E11 :E12 :E13 :E17 :E2 :E3 :E4
+             :E5 :E6 :E7 :E8 :E9 :G4 :G6 :G8 :I2
+             :I3 :I4 :I4a :I5 :I6 :I7 :I8}
+           (set (believed jg-expanded))))
     (is (check-structure-axioms jg-contract-e16))
     (is (check-color-axioms jg-contract-e16))
-    (is (check-structure-axioms jg-contract-e17-e16))
     (is (check-color-axioms jg-contract-e17-e16))
     (is (not ((set (believed jg-contract-e16)) :E16)))
     (is (not ((set (believed jg-contract-e17-e16)) :E17)))
     (is (not ((set (believed jg-contract-i4)) :I4)))
-    (is (not ((set (believed jg-contract-i1-i4)) :I1)))
-    #_(visualize jg-expanded)))
+    (is (not ((set (believed jg-contract-i1-i4)) :I1)))))
 
 (deftest test-random
   (let [premise-count 500
         premise-stroke-cardinality 100
         stroke-count 200
         expand-count 50
-        jg (reduce premise (new-just-graph) (range premise-count))
+        jg (apply premise (new-just-graph) (range premise-count))
         jg2 (reduce (fn [jg s] (forall-just jg (take (rand-int premise-stroke-cardinality)
                                                      (shuffle (range premise-count)))
                                             s))
