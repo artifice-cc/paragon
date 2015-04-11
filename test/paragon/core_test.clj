@@ -18,9 +18,9 @@
                (add-inconsistencies [:h1 :h2 :h3]))
         jg-abduced (abduce jg [:s1 :s2 :s3 :s4])]
     #_(visualize jg)
-    #_(visualize jg-abduced)
+    (visualize jg-abduced)
     #_(save-pdf jg-expanded "test.pdf")
-    (is (= #{:h1 :h2 :j1 :j2 :s1 :s2 :s4} (set (believed jg-abduced))))))
+    (is (= #{:h2 :h3 :j2 :j3 :j4 :s1 :s3 :s4} (set (believed jg-abduced))))))
 
 (deftest test-peyer
   #_(turn-on-debugging)
@@ -54,19 +54,19 @@
                (can-explain [:I8] [:E17])
                (add-inconsistencies [:G1 :I1] [:G1 :I8] [:I1 :I8]
                                     [:G2 :I5] [:G3 :I3] [:G5 :I2] [:G7 :I7]))
-        jg-expanded (abduce jg [:E1 :E2 :E3 :E4 :E5 :E6 :E7
+        jg-abduced (abduce jg [:E1 :E2 :E3 :E4 :E5 :E6 :E7
                                 :E8 :E9 :E10 :E11 :E12 :E13
                                 :E14 :E15 :E16 :E17])
-        jg-contract-e16 (contract jg-expanded [:E16])
+        jg-contract-e16 (contract jg-abduced [:E16])
         jg-contract-e17-e16 (contract jg-contract-e16 [:E17])
-        jg-contract-i4 (contract jg-expanded [:I4])
+        jg-contract-i4 (contract jg-abduced [:I4])
         jg-contract-i1-i4 (contract jg-contract-i4 [:I1])]
-    (is (check-structure-axioms jg-expanded))
-    (is (check-color-axioms jg-expanded))
-    (is (= #{:E10 :E11 :E12 :E13 :E17 :E2 :E3 :E4
-             :E5 :E6 :E7 :E8 :E9 :G4 :G6 :G8 :I2
-             :I3 :I4 :I4a :I5 :I6 :I7 :I8}
-           (set (believed jg-expanded))))
+    (is (check-structure-axioms jg-abduced))
+    (is (check-color-axioms jg-abduced))
+    (is (= #{:E10 :E11 :E12 :E13 :E17 :E2 :E3 :E4 :E5 :E6 :E8 :E9
+             :G2 :G3 :G4 :G6 :G7 :G8 :I2 :I4a :I6 :I8}
+           (set (believed jg-abduced))))
+    (visualize jg-abduced)
     (is (check-structure-axioms jg-contract-e16))
     (is (check-color-axioms jg-contract-e16))
     (is (check-color-axioms jg-contract-e17-e16))

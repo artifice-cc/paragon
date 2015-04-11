@@ -419,39 +419,38 @@
               jg))))))
 
 (defn spread-abduce-default-strategy
-  "Guaranteed that bad-nodes is not empty."
-  [_ bad-nodes]
-  (let [best-bad-node (first (sort-by jgstr bad-nodes))]
+  "Guaranteed that bad-strokes is not empty."
+  [_ bad-strokes]
+  (let [best-bad-stroke (first (sort-by jgstr bad-strokes))]
     (when @debugging?
-      (println "Choosing bad node:" best-bad-node))
-    best-bad-node))
+      (println "Choosing bad stroke:" best-bad-stroke))
+    best-bad-stroke))
 
-(defnp spread-abduce-bad-strokes
-  "Bad stroke w.r.t. abduction: A stroke is white but points to a black node, or
-  its white and all its incoming nodes are black."
+(defnp spread-abduce-bad-strokes-deterministic
+  "Bad stroke w.r.t. abduction (deterministic): A stroke is white but all its incoming nodes are black."
   [jg]
   (filter (fn [s] (and (white? jg s)
-                       (or (black? jg (first (jgout jg s)))
-                           (and (not-empty (jgin jg s))
-                                (every? (fn [n] (black? jg n))
-                                        (jgin jg s))))))
+                       (and (not-empty (jgin jg s))
+                            (every? (fn [n] (black? jg n))
+                                    (jgin jg s)))))
           (strokes jg)))
 
-(defnp spread-abduce-bad-nodes-deterministic
-  "Bad node w.r.t. abduction (deterministic): A node is white but is pointed to by a black stroke."
+(defnp spread-abduce-bad-strokes-nondeterministic
+  "Bad stroke w.r.t. abduction (non-deterministic): A stroke is white but points to a black node that
+  has only white strokes pointing to it."
   [jg]
-  (filter (fn [n] (and (white? jg n)
-                       (some (fn [s] (black? jg s)) (jgin jg n))))
-          (nodes jg)))
+  (filter (fn [s] (and (white? jg s)
+                       (black? jg (first (jgout jg s)))
+                       (every? (fn [s2] (white? jg s2))
+                               (jgin jg (first (jgout jg s))))))
+          (strokes jg)))
 
-(defnp spread-abduce-bad-nodes-nondeterministic
-  "Bad node w.r.t. abduction (non-deterministic): A node is white but points to a black stroke that
-  has only white nodes pointing to it."
+(defnp spread-abduce-bad-nodes
+  "Bad node w.r.t. abduction: A node is white but is pointed to by a black stroke or points to a black stroke."
   [jg]
   (filter (fn [n] (and (white? jg n)
-                       (some (fn [s] (and (black? jg s)
-                                          (every? (fn [n2] (white? jg n2)) (jgin jg s))))
-                             (jgout jg n))))
+                       (or (some (fn [s] (black? jg s)) (jgin jg n))
+                           (some (fn [s] (black? jg s)) (jgout jg n)))))
           (nodes jg)))
 
 (defnp spread-abduce
@@ -462,22 +461,21 @@
       (do (when @debugging? (println "All axioms satisfied in spread-abduce."))
           jg)
       ;; something to do (inconsistent), spread abductively
-      (let [bad-strokes (delay (spread-abduce-bad-strokes jg))
-            bad-nodes-deterministic (delay (spread-abduce-bad-nodes-deterministic jg))
-            bad-nodes-nondeterministic (delay (spread-abduce-bad-nodes-nondeterministic jg))]
+      (let [bad-strokes-deterministic (delay (spread-abduce-bad-strokes-deterministic jg))
+            bad-strokes-nondeterministic (delay (spread-abduce-bad-strokes-nondeterministic jg))
+            bad-nodes (delay (spread-abduce-bad-nodes jg))]
         (when @debugging?
           (println "Spreading abductively.")
-          (println "Found bad strokes:" @bad-strokes)
-          (println "Found bad nodes (deterministic):" @bad-nodes-deterministic)
-          (println "Found bad nodes (non-deterministic):" @bad-nodes-nondeterministic))
+          (println "Found bad strokes (deterministic):" @bad-strokes-deterministic)
+          (println "Found bad strokes (non-deterministic):" @bad-strokes-nondeterministic)
+          (println "Found bad nodes:" @bad-nodes))
         (cond
-          ;; if we have bad strokes, just take care of them; no need for strategy
-          ;; or, if we have deterministic bad nodes, just take care of them; no need for strategy
-          (or (not-empty @bad-strokes) (not-empty @bad-nodes-deterministic))
-          (recur (reduce assert-black jg (concat @bad-strokes @bad-nodes-deterministic)))
-          ;; if we have a non-deterministic bad node, employ the strategy
-          (not-empty @bad-nodes-nondeterministic)
-          (recur (assert-black jg (abduce-strategy jg @bad-nodes-nondeterministic)))
+          ;; if we have deterministic bad strokes and/or nodes, just take care of them; no need for strategy
+          (or (not-empty @bad-strokes-deterministic) (not-empty @bad-nodes))
+          (recur (reduce assert-black jg (concat @bad-strokes-deterministic @bad-nodes)))
+          ;; if we have a non-deterministic bad stroke, employ the strategy
+          (not-empty @bad-strokes-nondeterministic)
+          (recur (assert-black jg (abduce-strategy jg @bad-strokes-nondeterministic)))
           :else
           (do (when @debugging? (println "Axioms failed in spread-abduce."))
               jg))))))
@@ -519,7 +517,7 @@
               jg))))))
 
 (defnp contract
-  "Only colors black (upwards and downwards). A \"strategy\" is needed. Uses white-strategy for now."
+  "Only colors white (upwards and downwards). A \"strategy\" is needed. Uses white-strategy for now."
   [jg nodes & {:keys [white-strategy abd?]
                :or {white-strategy spread-white-default-strategy
                     abd? false}}]
