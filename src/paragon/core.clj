@@ -129,8 +129,9 @@
                 :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defn save-pdf
-  [jg fname]
-  (let [dot (graphio/dot-str (visualize-dot jg) :node {:fillcolor :white :style :filled :fontname "sans"})
+  [jg fname  & {:keys [node-labels? stroke-labels?] :or {node-labels? true stroke-labels? false}}]
+  (let [dot (graphio/dot-str (visualize-dot jg node-labels? stroke-labels?)
+                             :node {:fillcolor :white :style :filled :fontname "sans"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
     (with-open [w (java.io.FileOutputStream. fname)]
       (.write w pdf))))
