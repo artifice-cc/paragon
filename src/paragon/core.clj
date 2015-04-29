@@ -6,7 +6,8 @@
   (:require [loom.attr :as graphattr])
   (:require [loom.io :as graphio])
   (:require [clojure.java.shell :as shell])
-  (:require [taoensso.timbre.profiling :refer [defnp]]))
+  (:require [taoensso.timbre.profiling :refer [defnp]])
+  (:require [clojure.math.combinatorics :as combo]))
 
 (def debugging? (atom false))
 
@@ -98,6 +99,12 @@
   [jg stroke-or-node]
   (graph/incoming (:graph jg) stroke-or-node))
 
+(defn premise?
+  [jg node]
+  (assert (node? jg node))
+  ;; this node has some stroke that has no incoming nodes
+  (some (fn [s] (empty? (jgin jg s))) (jgin jg node)))
+
 (defnp visualize-dot
   [jg node-labels? stroke-labels?]
   (let [g (:graph jg)
@@ -129,7 +136,7 @@
                 :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defn save-pdf
-  [jg fname  & {:keys [node-labels? stroke-labels?] :or {node-labels? true stroke-labels? false}}]
+  [jg fname & {:keys [node-labels? stroke-labels?] :or {node-labels? false stroke-labels? false}}]
   (let [dot (graphio/dot-str (visualize-dot jg node-labels? stroke-labels?)
                              :node {:fillcolor :white :style :filled :fontname "sans"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
@@ -366,7 +373,7 @@
 (defn spread-white-default-strategy
   "Guaranteed that bad-nodes is not empty."
   [_ bad-nodes]
-  (let [best-bad-node (first (sort-by jgstr bad-nodes))]
+  (let [best-bad-node (last (sort-by jgstr bad-nodes))]
     (when @debugging?
       (println "Choosing bad node:" best-bad-node))
     best-bad-node))
@@ -529,6 +536,7 @@
                :or {white-strategy spread-white-default-strategy
                     abd? false}}]
   (assert (sequential? nodes))
+  (when @debugging? (println "Contracting by" nodes))
   (let [jg-asserted (reduce (fn [jg2 node]
                               (assert-white jg2 (if abd? (format ".%s" (jgstr node)) node)))
                             jg nodes)
@@ -571,3 +579,78 @@
       :else
       nil)))
 
+(defn convert-to-com-input
+  [jg contract-ns]
+  (format "%s\n\n[%s] ?- [%s]."
+          (str/join "\n" (for [n (nodes jg)]
+                           (format "node(%s)." (jgstr n))))
+          (str/join ", " (for [n (nodes jg)
+                               s (jgin jg n)]
+                           (if (empty? (jgin jg s))
+                             (format "[[%s], %s]" (jgstr n) (jgstr n))
+                             (format "[[%s], %s]" (str/join ", " (map jgstr (jgin jg s))) (jgstr n)))))
+          (str/join "," (map jgstr contract-ns))))
+
+(defn parse-com-output
+  [jg output]
+  (spread-black
+   (reduce (fn [jg [premises conclusion]]
+             (if (= premises conclusion)
+               (-> jg (assert-black (format "s%s" conclusion))
+                   (assert-black conclusion))
+               (reduce assert-black jg (conj (str/split premises #"\s*,\s*") conclusion))))
+           (reduce assert-white jg (concat (nodes jg) (strokes jg)))
+           (map #(str/split % #"\s*\|-\s*")
+                (re-seq #"[\w,]+ \|- \w+" (second (re-find #"(?s)ANSWER: (.*?)####" output)))))))
+
+(defn process-with-com
+  [jg contract-ns mm?]
+  (let [input-str (convert-to-com-input jg contract-ns)]
+    (when @debugging? (println input-str))
+    (spit "test-com.pl" input-str)
+    (let [{output :out} (shell/sh "changes-of-mind/a.out" "test-com.pl" (if mm? "on" "off"))]
+      (when @debugging? (println output))
+      (try (parse-com-output jg output)
+           (catch Exception _ (println input-str) (println output) (throw (Exception.)))))))
+
+(defn convert-to-prolog
+  [jg]
+  (let [rules (for [n (nodes jg)
+                    :when (and (not= n :bottom) (not (premise? jg n)))
+                    s (jgin jg n)]
+                {:head n :body (jgin jg s)})
+        inconsistencies (reduce (fn [m s]
+                                  (let [incon (jgin jg s)]
+                                    (reduce (fn [m2 n]
+                                              (update-in m2 [n] conj (filter #(not= n %) incon)))
+                                            m incon)))
+                                {} (jgin jg :bottom))
+        preds (concat (map #(format "premise(%s)." (jgstr %))
+                           (filter #(premise? jg %) (nodes jg)))
+                      (map #(format "b(%s)." (jgstr %))
+                           (filter #(premise? jg %) (believed jg)))
+                      (map (fn [rule]
+                             (let [rule-body (map #(format "believed(%s)" (jgstr %))
+                                                  (:body rule))]
+                               (format "believed(%s) :- %s."
+                                       (jgstr (:head rule)) (str/join ", " rule-body))))
+                           rules)
+                      (mapcat (fn [[n incon-groups]]
+                                (map (fn [incon-group]
+                                       (format "consistent(%s) :- %s."
+                                               (jgstr n)
+                                               (str/join ", " (map (fn [incon] (format "disbelieved(%s)" (jgstr incon)))
+                                                                   incon-group))))
+                                     (apply combo/cartesian-product incon-groups)))
+                              (seq inconsistencies))
+                      ;; all nodes not mentioned in inconsistencies map get default consistency
+                      (map (fn [n] (format "consistent(%s)." (jgstr n)))
+                           (filter (fn [n] (and (not= :bottom n) (nil? (inconsistencies n)))) (nodes jg)))
+                      ["assertwhite(X) :- retract(b(X))."
+                       "assertblack(X) :- premise(X), assert(b(X)), allconsistent.\nassertblack(X) :- premise(X), retract(b(X))."
+                       "believed(X) :- premise(X), b(X)."
+                       "disbelieved(X) :- \\+b(X)."
+                       "allconsistent :- forall(believed(X), consistent(X))."])]
+    (str
+      ":- dynamic b/1.\n"
+      (str/join "\n" (sort preds)))))
