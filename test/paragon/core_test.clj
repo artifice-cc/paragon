@@ -47,7 +47,6 @@
     (is (= "p :- not(q).\np.\nq :- not(p).\nr :- p.\nr :- q." (convert-to-prolog jg5)))))
 
 (deftest test-expand-explains
-  #_(turn-on-debugging)
   (let [jg (-> (new-just-graph)
                (can-explain [:h1] [:s1])
                (can-explain [:h1] [:s2])
@@ -60,10 +59,10 @@
                (premise :j1 :j2 :j3 :j4 :h2)
                (add-inconsistencies [:h1 :h2 :h3]))
         jg-abduced (abduce jg [:s1 :s2 :s3 :s4])]
-    (visualize jg)
-    (visualize jg-abduced)
+    #_(visualize jg)
+    #_(visualize jg-abduced)
     #_(save-pdf jg-expanded "test.pdf")
-    (is (= #{:h2 :h3 :j2 :j3 :j4 :s1 :s3 :s4} (set (believed jg-abduced))))
+    (is (= #{:h1 :h2 :j1 :j2 :j3 :s1 :s2 :s4} (set (believed jg-abduced))))
     #_(is (= "h1 :- j2, j1.\nh1 :- not(h2).\nh1 :- not(h3).\nh2 :- not(h1).\nh2 :- not(h3).\nh3 :- j4, j3, j2.\nh3 :- not(h1).\nh3 :- not(h2).\ns1 :- h1.\ns1 :- h2.\ns2 :- h1.\ns3 :- h3.\ns4 :- h2.\ns4 :- h3." (convert-to-prolog jg)))))
 
 (deftest test-convert-to-prolog
@@ -81,10 +80,9 @@
                (add-inconsistencies [:h1 :j3]))
         jg-abduced (abduce jg [:s1 :s2 :s3 :s4])]
     #_(visualize jg-abduced)
-    (println (convert-to-prolog jg-abduced))))
+    #_(println (convert-to-prolog jg-abduced))))
 
 (deftest test-peyer
-  #_(turn-on-debugging)
   (let [jg (-> (new-just-graph)
                (premise :I1 :G1 :G6 :G4 :G5 :I2 :G3 :I3 :G1 :I4 :I4a :G2 :I5
                         :I6 :G7 :I7 :G8 :I8)
@@ -124,8 +122,8 @@
         jg-contract-i1-i4 (contract jg-contract-i4 [:I1])]
     (is (check-structure-axioms jg-abduced))
     (is (check-color-axioms jg-abduced))
-    (is (= #{:E10 :E11 :E12 :E13 :E17 :E2 :E3 :E4 :E5 :E6 :E8 :E9
-             :G2 :G3 :G4 :G6 :G7 :G8 :I2 :I4a :I6 :I8}
+    (is (= #{:E10 :E11 :E12 :E13 :E1 :E14 :E7 :E2 :E3 :E4 :E6 :E8 :E9
+             :G1 :G5 :G2 :G3 :G4 :G6 :G7 :G8 :I4a :I6}
            (set (believed jg-abduced))))
     #_(visualize jg-abduced)
     (is (check-structure-axioms jg-contract-e16))
@@ -155,26 +153,25 @@
 
 (deftest test-contraction-1
     (let [jg (-> (new-just-graph)
-                 (premise :c :d :e :f :a :b :g)
-                 (forall-just [:c :d] :cd)
-                 (forall-just [:a :b] :ab1)
-                 (forall-just [:a :b] :ab2)
+                 (premise :a :b :c :f :d :e :g)
+                 (forall-just [:a :b] :ab)
+                 (forall-just [:f :d] :fd)
                  (forall-just [:g :i] :gi)
-                 (forall-just [:f :h] :fh)
-                 (forall-just [:e :f] :ef)
-                 (exists-just [:cd :ef] :i)
-                 (exists-just [:gi :fh] :j)
-                 (exists-just [:ab1] :h)
-                 (exists-just [:ab2] :g))
+                 (forall-just [:c] :ch)
+                 (forall-just [:c :h] :ch2)
+                 (forall-just [:e] :eh)
+                 (exists-just [:ch] :h)
+                 (exists-just [:ab] :i)
+                 (exists-just [:eh] :h)
+                 (exists-just [:gi :ch2] :j)
+                 (exists-just [:fd] :h))
           jg-black (-> jg
-                       (abduce [:c :d :e :f :a :g])
-                       (expand [:g]))
-          _ (turn-on-debugging)
-          jg-contracted (contract jg-black [:h :c] :white-strategy #(strategy-pref-ancestors %1 %2 true))]
-      (println (convert-to-com-input jg [:a]))
-      (visualize (process-with-com jg [:a]))
-      (save-pdf jg-contracted "ex-fdn.pdf")
-      (visualize jg-contracted)))
+                       (abduce [:c :d :e :f :a :g :h :b])
+                       (assert-black [".g"]))
+          jg-contracted (contract jg-black [:a :b :e] :white-strategy #(strategy-pref-ancestors %1 %2 true))]
+      (assert (check-structure-axioms jg))
+      #_(save-pdf jg-contracted "ex-fdn.pdf")
+      #_(visualize jg-contracted)))
 
 (deftest test-contraction-2
     (let [jg (-> (new-just-graph)
@@ -192,13 +189,12 @@
           jg-black (-> jg
                        (abduce [:b :c :d :e :f :a :g])
                        (expand [".g"]))
-          _ (turn-on-debugging)
           jg-contracted (contract jg-black [:a] :white-strategy #(strategy-pref-ancestors %1 %2 true))]
       #_(println (convert-to-com-input jg [:a]))
-      (visualize (process-with-com jg [:a] true))
-      (visualize (process-with-com jg [:a] false))
+      #_(visualize (process-with-com jg [:a] true))
+      #_(visualize (process-with-com jg [:a] false))
       #_(save-pdf jg-contracted "ex-fdn.pdf")
-      (visualize jg-contracted)))
+      #_(visualize jg-contracted)))
 
 (deftest test-contraction-sprig-top
     (let [jg (-> (new-just-graph)
@@ -212,11 +208,10 @@
           jg-black (-> jg
                        (abduce [:a :b :c :d])
                        (expand [:g]))
-          _ (turn-on-debugging)
           jg-contracted (contract jg-black [:b] :white-strategy #(strategy-pref-ancestors %1 %2 true))]
-      (visualize (process-with-com jg [:b]))
+      #_(visualize (process-with-com jg [:b]))
       #_(save-pdf jg-contracted "ex-fdn.pdf")
-      (visualize jg-contracted)))
+      #_(visualize jg-contracted)))
 
 (deftest test-inconsistency-1
   (let [jg (-> (new-just-graph)
@@ -231,12 +226,12 @@
         jg4 (abduce jg [:c])
         jg5 (abduce jg [:c :a])
         jg6 (abduce jg [:c :b])]
-    (save-pdf jg "ex-inconsistency-1.pdf")
-    (save-pdf jg2 "ex-inconsistency-2.pdf")
-    (save-pdf jg3 "ex-inconsistency-3.pdf")
-    (save-pdf jg4 "ex-inconsistency-4.pdf")
-    (save-pdf jg5 "ex-inconsistency-5.pdf")
-    (save-pdf jg6 "ex-inconsistency-6.pdf")
+    #_(save-pdf jg "ex-inconsistency-1.pdf")
+    #_(save-pdf jg2 "ex-inconsistency-2.pdf")
+    #_(save-pdf jg3 "ex-inconsistency-3.pdf")
+    #_(save-pdf jg4 "ex-inconsistency-4.pdf")
+    #_(save-pdf jg5 "ex-inconsistency-5.pdf")
+    #_(save-pdf jg6 "ex-inconsistency-6.pdf")
     #_(visualize jg)
     #_(visualize jg2)
     #_(visualize jg3)

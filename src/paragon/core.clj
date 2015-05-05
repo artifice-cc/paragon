@@ -136,7 +136,7 @@
                 :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defn save-pdf
-  [jg fname & {:keys [node-labels? stroke-labels?] :or {node-labels? false stroke-labels? false}}]
+  [jg fname & {:keys [node-labels? stroke-labels?] :or {node-labels? true stroke-labels? false}}]
   (let [dot (graphio/dot-str (visualize-dot jg node-labels? stroke-labels?)
                              :node {:fillcolor :white :style :filled :fontname "sans"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
