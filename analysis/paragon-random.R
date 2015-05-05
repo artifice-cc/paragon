@@ -25,7 +25,7 @@ row.measures.differ <- function(row, dx)
 
 analyze.measure <- function(d, measure, base_strat)
 {
-  dwide <- data.frame.wide(d, c("Case", "ChanceAnd", "ChanceSplit", "Inconsistent", "Same"),
+  dwide <<- data.frame.wide(d, c("Case", "ChanceAnd", "ChanceSplit", "Inconsistent", "Same"),
                            measure, "Strategy")
   #dwide <- cbind(dwide[,1:5], lapply(colnames(dwide)[6:ncol(dwide)], function(col) {
   #  dcol <- data.frame(x=(100.0*(dwide[,col] - dwide[,base_strat] + 1.0)/(dwide[,base_strat] + 1.0)))
@@ -33,7 +33,7 @@ analyze.measure <- function(d, measure, base_strat)
   #  dcol
   #}))
   #dsub <- dwide[(1:nrow(dwide))[sapply(1:nrow(dwide), function(x) { row.measures.differ(dwide[x,], dwide) })],]
-  dsub <- subset(dwide, Same == "false")
+  dsub <<- subset(dwide, Same == "false")
   print(paste("nrow dwide:", nrow(dwide), "nrow dsub:", nrow(dsub)))
   dsubm <- melt(dsub, c("Case", "ChanceAnd", "ChanceSplit", "Inconsistent", "Same"))
   print(head(dwide))
@@ -55,11 +55,11 @@ analyze.measure <- function(d, measure, base_strat)
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
 }
 
-d <- read.csv("paragon-random-abduce.csv")
-#d <- read.csv("paragon-random-contract.csv")
-analyze.measure(d, "ExplainedPct", "rand_min-ancestors")
+#d <- read.csv("paragon-random-abduce.csv")
+d <- read.csv("paragon-random-contract.csv")
+#analyze.measure(d, "ExplainedPct", "rand_min-ancestors")
 #analyze.measure(d, "ChangePct", "rand_min-ancestors")
 #analyze.measure(d, "RecoversPct", "rand")
-#analyze.measure(d, "ChangePct", "rand")
+analyze.measure(d, "ChangePct", "rand")
 #analyze.measure(d, "Microseconds", "rand")
 
