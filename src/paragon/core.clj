@@ -99,7 +99,7 @@
   [jg stroke-or-node]
   (graph/incoming (:graph jg) stroke-or-node))
 
-(defn premise?
+(defn initial?
   [jg node]
   (assert (node? jg node))
   ;; this node has some stroke that has no incoming nodes
@@ -310,7 +310,7 @@
                                (update-in [:graph] graph/add-edges [stroke node])))
           (assoc-in jg [:types node] :node) strokes))
 
-(defn premise
+(defn add-initial
   [jg & nodes]
   (reduce (fn [jg2 n]
             (let [stroke (format ".%s" (jgstr n))]
@@ -532,14 +532,11 @@
 
 (defnp contract
   "Only colors white (upwards and downwards). A \"strategy\" is needed. Uses white-strategy for now."
-  [jg nodes & {:keys [white-strategy abd?]
-               :or {white-strategy spread-white-default-strategy
-                    abd? false}}]
+  [jg nodes & {:keys [white-strategy]
+               :or {white-strategy spread-white-default-strategy}}]
   (assert (sequential? nodes))
   (when @debugging? (println "Contracting by" nodes))
-  (let [jg-asserted (reduce (fn [jg2 node]
-                              (assert-white jg2 (if abd? (format ".%s" (jgstr node)) node)))
-                            jg nodes)
+  (let [jg-asserted (reduce assert-white jg nodes)
         jg-whitened (spread-white jg-asserted white-strategy)]
     ;; if it didn't work out (no way to spread-white consistently), return nil
     (if (check-color-axioms jg-whitened)
@@ -564,13 +561,18 @@
       nil)))
 
 (defnp expand
+  "Only colors black, and only downwards. 'bottom' node may be colored black (which is inconsistent)."
+  [jg nodes]
+  (assert (sequential? nodes))
+  (let [jg-asserted (reduce assert-black jg nodes)]
+    (spread-black jg-asserted)))
+
+(defnp revise
   "Only colors black, and only downwards, except when 'bottom' is colored black.
    A white-strategy is needed in case 'bottom' is turned black and contraction is required."
   [jg nodes & {:keys [white-strategy]
                :or {white-strategy spread-white-default-strategy}}]
-  (assert (sequential? nodes))
-  (let [jg-asserted (reduce assert-black jg nodes)
-        jg-blackened (spread-black jg-asserted)]
+  (let [jg-blackened (expand jg nodes)]
     (cond
       (check-color-axioms jg-blackened)
       jg-blackened
@@ -594,11 +596,11 @@
 (defn parse-com-output
   [jg output]
   (spread-black
-   (reduce (fn [jg [premises conclusion]]
-             (if (= premises conclusion)
+   (reduce (fn [jg [initials conclusion]]
+             (if (= initials conclusion)
                (-> jg (assert-black (format "s%s" conclusion))
                    (assert-black conclusion))
-               (reduce assert-black jg (conj (str/split premises #"\s*,\s*") conclusion))))
+               (reduce assert-black jg (conj (str/split initials #"\s*,\s*") conclusion))))
            (reduce assert-white jg (concat (nodes jg) (strokes jg)))
            (map #(str/split % #"\s*\|-\s*")
                 (re-seq #"[\w,]+ \|- \w+" (second (re-find #"(?s)ANSWER: (.*?)####" output)))))))
@@ -616,7 +618,7 @@
 (defn convert-to-prolog
   [jg]
   (let [rules (for [n (nodes jg)
-                    :when (and (not= n :bottom) (not (premise? jg n)))
+                    :when (and (not= n :bottom) (not (initial? jg n)))
                     s (jgin jg n)]
                 {:head n :body (jgin jg s)})
         inconsistencies (reduce (fn [m s]
@@ -625,10 +627,10 @@
                                               (update-in m2 [n] conj (filter #(not= n %) incon)))
                                             m incon)))
                                 {} (jgin jg :bottom))
-        preds (concat (map #(format "premise(%s)." (jgstr %))
-                           (filter #(premise? jg %) (nodes jg)))
+        preds (concat (map #(format "initial(%s)." (jgstr %))
+                           (filter #(initial? jg %) (nodes jg)))
                       (map #(format "b(%s)." (jgstr %))
-                           (filter #(premise? jg %) (believed jg)))
+                           (filter #(initial? jg %) (believed jg)))
                       (map (fn [rule]
                              (let [rule-body (map #(format "believed(%s)" (jgstr %))
                                                   (:body rule))]
@@ -647,8 +649,8 @@
                       (map (fn [n] (format "consistent(%s)." (jgstr n)))
                            (filter (fn [n] (and (not= :bottom n) (nil? (inconsistencies n)))) (nodes jg)))
                       ["assertwhite(X) :- retract(b(X))."
-                       "assertblack(X) :- premise(X), assert(b(X)), allconsistent.\nassertblack(X) :- premise(X), retract(b(X))."
-                       "believed(X) :- premise(X), b(X)."
+                       "assertblack(X) :- initial(X), assert(b(X)), allconsistent.\nassertblack(X) :- initial(X), retract(b(X))."
+                       "believed(X) :- initial(X), b(X)."
                        "disbelieved(X) :- \\+b(X)."
                        "allconsistent :- forall(believed(X), consistent(X))."])]
     (str

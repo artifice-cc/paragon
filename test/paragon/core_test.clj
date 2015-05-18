@@ -8,33 +8,33 @@
 
 (deftest test-basic-operations
   (let [jg (-> (new-just-graph)
-               (premise :n))]
-    (is (premise? jg :n))))
+               (add-initial :n))]
+    (is (initial? jg :n))))
 
 (deftest test-convert-to-prolog
   (let [jg (-> (new-just-graph)
-               (premise :n))
+               (add-initial :n))
         jg2 (-> (new-just-graph)
-                (premise :p)
-                (premise :q)
+                (add-initial :p)
+                (add-initial :q)
                 (forall-just [:p :q] :s)
                 (exists-just [:s] :r))
         jg3 (-> (new-just-graph)
-                (premise :p)
-                (premise :q)
+                (add-initial :p)
+                (add-initial :q)
                 (forall-just [:p] :s1)
                 (forall-just [:q] :s2)
                 (exists-just [:s1 :s2] :r))
         jg4 (-> (new-just-graph)
-                (premise :p)
-                (premise :q)
+                (add-initial :p)
+                (add-initial :q)
                 (forall-just [:p] :s1)
                 (forall-just [:q] :s2)
                 (exists-just [:s1 :s2] :r)
                 (add-inconsistencies [:p :q]))
         jg5 (-> (new-just-graph)
-                (premise :p)
-                (premise :q)
+                (add-initial :p)
+                (add-initial :q)
                 (forall-just [:p] :s1)
                 (forall-just [:q] :s2)
                 (exists-just [:s1 :s2] :r)
@@ -56,7 +56,7 @@
                (can-explain [:h3] [:s4])
                (can-explain [:j1 :j2] [:h1])
                (can-explain [:j2 :j3 :j4] [:h3])
-               (premise :j1 :j2 :j3 :j4 :h2)
+               (add-initial :j1 :j2 :j3 :j4 :h2)
                (add-inconsistencies [:h1 :h2 :h3]))
         jg-abduced (abduce jg [:s1 :s2 :s3 :s4])]
     #_(visualize jg)
@@ -75,7 +75,7 @@
                (can-explain [:h3] [:s4])
                (can-explain [:j1 :j2] [:h1])
                (can-explain [:j2 :j3 :j4] [:h3])
-               (premise :j1 :j2 :j3 :j4 :h2)
+               (add-initial :j1 :j2 :j3 :j4 :h2)
                (add-inconsistencies [:h1 :h2 :h3])
                (add-inconsistencies [:h1 :j3]))
         jg-abduced (abduce jg [:s1 :s2 :s3 :s4])]
@@ -84,7 +84,7 @@
 
 (deftest test-peyer
   (let [jg (-> (new-just-graph)
-               (premise :I1 :G1 :G6 :G4 :G5 :I2 :G3 :I3 :G1 :I4 :I4a :G2 :I5
+               (add-initial :I1 :G1 :G6 :G4 :G5 :I2 :G3 :I3 :G1 :I4 :I4a :G2 :I5
                         :I6 :G7 :I7 :G8 :I8)
                (can-explain [:I1] [:E1])
                (can-explain [:G1] [:E1])
@@ -153,7 +153,7 @@
 
 (deftest test-contraction-1
     (let [jg (-> (new-just-graph)
-                 (premise :a :b :c :f :d :e :g)
+                 (add-initial :a :b :c :f :d :e :g)
                  (forall-just [:a :b] :ab)
                  (forall-just [:f :d] :fd)
                  (forall-just [:g :i] :gi)
@@ -175,7 +175,7 @@
 
 (deftest test-contraction-2
     (let [jg (-> (new-just-graph)
-                 (premise :c :d :e :f :a :b :g)
+                 (add-initial :c :d :e :f :a :b :g)
                  (forall-just [:c :d] :cd)
                  (forall-just [:a :b] :ab1)
                  (forall-just [:a :b] :ab2)
@@ -198,7 +198,7 @@
 
 (deftest test-contraction-sprig-top
     (let [jg (-> (new-just-graph)
-                 (premise :a :b :c :d)
+                 (add-initial :a :b :c :d)
                  (forall-just [:a :b] :ab)
                  (forall-just [:c :d] :cd)
                  (exists-just [:ab] :e)
@@ -215,7 +215,7 @@
 
 (deftest test-inconsistency-1
   (let [jg (-> (new-just-graph)
-               (premise :c :b :a)
+               (add-initial :c :b :a)
                (forall-just [:a] :sa)
                (exists-just [:scb] :e)
                (forall-just [:c :b] :scb)
@@ -244,7 +244,7 @@
         premise-stroke-cardinality 100
         stroke-count 200
         expand-count 50
-        jg (apply premise (new-just-graph) (range premise-count))
+        jg (apply add-initial (new-just-graph) (range premise-count))
         jg2 (reduce (fn [jg s] (forall-just jg (take (rand-int premise-stroke-cardinality)
                                                      (shuffle (range premise-count)))
                                             s))

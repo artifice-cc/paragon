@@ -383,7 +383,7 @@
                                                                                       (nodes jg-final))
                                                                      recovers (doall (filter (fn [n]
                                                                                                (let [jg-expanded (-> jg-final
-                                                                                                                     (premise n)
+                                                                                                                     (add-initial n)
                                                                                                                      (assert-black (format ".%s" (jgstr n)))
                                                                                                                      (spread-black))]
                                                                                                  (every? #(black? jg-expanded %) contract-ns)))
