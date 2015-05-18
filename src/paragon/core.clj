@@ -9,19 +9,18 @@
   (:require [taoensso.timbre.profiling :refer [defnp]])
   (:require [clojure.math.combinatorics :as combo]))
 
+;;;;
+;;;; DEBUGGING
+;;;;
+
 (def debugging? (atom false))
 
 (defn turn-on-debugging [] (swap! debugging? (constantly true)))
 (defn turn-off-debugging [] (swap! debugging? (constantly false)))
 
-(defn jgstr
-  [stroke-or-node]
-  (cond (keyword? stroke-or-node)
-        (name stroke-or-node)
-        (map? stroke-or-node)
-        (str (:id stroke-or-node))
-        :else
-        (str stroke-or-node)))
+;;;;
+;;;; PRIMITIVES / DATA STRUCTURES
+;;;;
 
 (defn new-just-graph
   []
@@ -43,6 +42,15 @@
       (update-in [:graph] graph/remove-nodes node-or-stroke)
       (update-in [:types] dissoc node-or-stroke)
       (update-in [:coloring] dissoc node-or-stroke)))
+
+(defn jgstr
+  [stroke-or-node]
+  (cond (keyword? stroke-or-node)
+        (name stroke-or-node)
+        (map? stroke-or-node)
+        (str (:id stroke-or-node))
+        :else
+        (str stroke-or-node)))
 
 (defn jgcolor
   [jg stroke-or-node]
@@ -105,43 +113,85 @@
   ;; this node has some stroke that has no incoming nodes
   (some (fn [s] (empty? (jgin jg s))) (jgin jg node)))
 
-(defnp visualize-dot
-  [jg node-labels? stroke-labels?]
-  (let [g (:graph jg)
-        g-nodes (-> g
-                    (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? jg %) (nodes jg)))
-                    (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? jg %) (nodes jg)))
-                    (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? jg %) (nodes jg)))
-                    (graphattr/add-attr-to-nodes :fontcolor :black (filter #(white? jg %) (nodes jg))))
-        g-strokes (-> g-nodes
-                      (graphattr/add-attr-to-nodes :shape :plain (strokes jg))
-                      (graphattr/add-attr-to-nodes :height 0.1 (strokes jg))
-                      (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? jg %) (strokes jg)))
-                      (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? jg %) (strokes jg)))
-                      (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? jg %) (strokes jg)))
-                      (graphattr/add-attr-to-nodes :fontcolor :black (filter #(white? jg %) (strokes jg))))
-        g-stroke-labels (reduce (fn [g s] (graphattr/add-attr g s :label (if stroke-labels? (jgstr s) "&nbsp;")))
-                                g-strokes (strokes jg))
-        g-node-labels (reduce (fn [g n] (graphattr/add-attr g n :label (if node-labels? (jgstr n) "&nbsp;")))
-                              g-stroke-labels (nodes jg))]
-    ;; add bottom node properties (if bottom node exists)
-    (-> g-node-labels
-        (graphattr/add-attr :bottom :label "&perp;")
-        (graphattr/add-attr :bottom :fontsize "32")
-        (graphattr/add-attr :bottom :shape :none))))
+;;;;
+;;;; CONSTRUCTION
+;;;;
 
-(defn visualize
-  [jg & {:keys [node-labels? stroke-labels?] :or {node-labels? true stroke-labels? false}}]
-  (graphio/view (visualize-dot jg node-labels? stroke-labels?)
-                :node {:fillcolor :white :style :filled :fontname "sans"}))
+(defnp forall-just
+  [jg nodes stroke]
+  (reduce (fn [jg2 node] (-> jg2
+                             (assoc-in [:types node] :node)
+                             (update-in [:graph] graph/add-edges [node stroke])))
+          (assoc-in jg [:types stroke] :stroke) nodes))
 
-(defn save-pdf
-  [jg fname & {:keys [node-labels? stroke-labels?] :or {node-labels? true stroke-labels? false}}]
-  (let [dot (graphio/dot-str (visualize-dot jg node-labels? stroke-labels?)
-                             :node {:fillcolor :white :style :filled :fontname "sans"})
-        {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
-    (with-open [w (java.io.FileOutputStream. fname)]
-      (.write w pdf))))
+(defnp exists-just
+  [jg strokes node]
+  (reduce (fn [jg2 stroke] (-> jg2
+                               (assoc-in [:types stroke] :stroke)
+                               (update-in [:graph] graph/add-edges [stroke node])))
+          (assoc-in jg [:types node] :node) strokes))
+
+(defn add-initial
+  [jg & nodes]
+  (reduce (fn [jg2 n]
+            (let [stroke (format ".%s" (jgstr n))]
+              (exists-just jg2 [stroke] n)))
+          jg nodes))
+
+(defn- can-explain-single-hyp
+  "Link hyp to explananda via an intermediate stroke."
+  [jg hyp explananda]
+  (reduce (fn [jg2 ev]
+            (let [stroke (format "%sEXP%s" (jgstr hyp) (jgstr ev))]
+              (-> jg2
+                  (forall-just [hyp] stroke)
+                  (exists-just [stroke] ev))))
+          jg explananda))
+
+(defn- can-explain-conjunction-hyp
+  "Link each in explanatia to strokes that point to a special conjunction node (one for each explananda),
+   which then links to each explananda."
+  [jg explanantia explananda]
+  (reduce (fn [jg2 ev]
+            (let [stroke (format "%sEXP%s" (str/join "AND" (map jgstr explanantia)) (jgstr ev))
+                  jg-hyps-stroke (forall-just jg2 explanantia stroke)]
+              (exists-just jg-hyps-stroke [stroke] ev)))
+          jg explananda))
+
+(defnp can-explain
+  "The explananda, as a conjunction, justify each of the explanantia."
+  [jg explanantia explananda]
+  (assert (and (sequential? explanantia) (sequential? explananda)))
+  (if (second explanantia)
+    (can-explain-conjunction-hyp jg explanantia explananda)
+    (can-explain-single-hyp jg (first explanantia) explananda)))
+
+(defnp add-inconsistencies
+  "Indicate nodes that cannot all be simultaneously believed.
+
+  Usage example: (add-inconsistencies jg [:node1 :node2 :node3] [:node2 :node3] ...)"
+  [jg & nodesets]
+  (reduce (fn [jg2 nodes]
+            (let [botstroke (format "bot_%s" (str/join "-" (map jgstr nodes)))]
+              (-> jg2
+                  (forall-just nodes botstroke)
+                  (exists-just [botstroke] :bottom))))
+          jg nodesets))
+
+(defn add-nested-vec
+  "Add nodes/strokes as defined from a nested vector structure, e.g.: [[[a b] c] [[d] e]]."
+  [jg v]
+  (let [jg2 (reduce (fn [jg [premises conclusion]]
+                      (let [stroke (format "S%s__%s" (str/join "_" (map jgstr premises)) (jgstr conclusion))]
+                        (-> jg
+                            (forall-just premises stroke)
+                            (exists-just [stroke] conclusion))))
+                    jg v)]
+    (apply add-initial jg2 (filter #(initial? jg2 %) (nodes jg2)))))
+
+;;;;
+;;;; AXIOMS
+;;;;
 
 (defnp check-axiom-neg1
   "Everything is black or white."
@@ -190,11 +240,15 @@
           (graph/edges (:graph jg))))
 
 (defnp check-axiom-7
-  "If two strokes send arrows to the same thing, and the things from which one of them receives arrows are among those from which the other receives arrows, then those strokes are identical."
+  "If two strokes send arrows to the same thing, and the things from
+  which one of them receives arrows are among those from which the
+  other receives arrows, then those strokes are identical."
   [jg]
   (let [ss (strokes jg)]
     (every? (fn [s] (every? (fn [s2] (= s s2))
-                            ;; find strokes s2 where s2's incoming arrows are subseteq of incoming arrows of s
+                            ;; find strokes s2 where s2's incoming
+                            ;; arrows are subseteq of incoming arrows
+                            ;; of s
                             (filter (fn [s2]
                                       (and (not-empty (jgin jg s))
                                            (not-empty (jgin jg s2))
@@ -296,26 +350,9 @@
          (check-axiom-coloration-4 jg)
          (check-axiom-coloration-bottom jg))))
 
-(defnp forall-just
-  [jg nodes stroke]
-  (reduce (fn [jg2 node] (-> jg2
-                             (assoc-in [:types node] :node)
-                             (update-in [:graph] graph/add-edges [node stroke])))
-          (assoc-in jg [:types stroke] :stroke) nodes))
-
-(defnp exists-just
-  [jg strokes node]
-  (reduce (fn [jg2 stroke] (-> jg2
-                               (assoc-in [:types stroke] :stroke)
-                               (update-in [:graph] graph/add-edges [stroke node])))
-          (assoc-in jg [:types node] :node) strokes))
-
-(defn add-initial
-  [jg & nodes]
-  (reduce (fn [jg2 n]
-            (let [stroke (format ".%s" (jgstr n))]
-              (exists-just jg2 [stroke] n)))
-          jg nodes))
+;;;;
+;;;; COLORING
+;;;;
 
 (defn assert-color
   [jg stroke-or-node color]
@@ -329,46 +366,6 @@
 (defn assert-white
   [jg stroke-or-node]
   (assert-color jg stroke-or-node :white))
-
-(defn- can-explain-single-hyp
-  "Link hyp to explananda via an intermediate stroke."
-  [jg hyp explananda]
-  (reduce (fn [jg2 ev]
-            (let [stroke (format "%sEXP%s" (jgstr hyp) (jgstr ev))]
-              (-> jg2
-                  (forall-just [hyp] stroke)
-                  (exists-just [stroke] ev))))
-          jg explananda))
-
-(defn- can-explain-conjunction-hyp
-  "Link each in explanatia to strokes that point to a special conjunction node (one for each explananda),
-   which then links to each explananda."
-  [jg explanantia explananda]
-  (reduce (fn [jg2 ev]
-            (let [stroke (format "%sEXP%s" (str/join "AND" (map jgstr explanantia)) (jgstr ev))
-                  jg-hyps-stroke (forall-just jg2 explanantia stroke)]
-              (exists-just jg-hyps-stroke [stroke] ev)))
-          jg explananda))
-
-(defnp can-explain
-  "The explananda, as a conjunction, justify each of the explanantia."
-  [jg explanantia explananda]
-  (assert (and (sequential? explanantia) (sequential? explananda)))
-  (if (second explanantia)
-    (can-explain-conjunction-hyp jg explanantia explananda)
-    (can-explain-single-hyp jg (first explanantia) explananda)))
-
-(defnp add-inconsistencies
-  "Indicate nodes that cannot all be simultaneously believed.
-
-  Usage example: (add-inconsistencies jg [:node1 :node2 :node3] [:node2 :node3] ...)"
-  [jg & nodesets]
-  (reduce (fn [jg2 nodes]
-            (let [botstroke (format "bot_%s" (str/join "-" (map jgstr nodes)))]
-              (-> jg2
-                  (forall-just nodes botstroke)
-                  (exists-just [botstroke] :bottom))))
-          jg nodesets))
 
 (defn spread-white-default-strategy
   "Guaranteed that bad-nodes is not empty."
@@ -581,6 +578,52 @@
       :else
       nil)))
 
+;;;;
+;;;; VISUALIZATION
+;;;;
+
+(defnp visualize-dot
+  [jg node-labels? stroke-labels?]
+  (let [g (:graph jg)
+        g-nodes (-> g
+                    (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? jg %) (nodes jg)))
+                    (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? jg %) (nodes jg)))
+                    (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? jg %) (nodes jg)))
+                    (graphattr/add-attr-to-nodes :fontcolor :black (filter #(white? jg %) (nodes jg))))
+        g-strokes (-> g-nodes
+                      (graphattr/add-attr-to-nodes :shape :plain (strokes jg))
+                      (graphattr/add-attr-to-nodes :height 0.1 (strokes jg))
+                      (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? jg %) (strokes jg)))
+                      (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? jg %) (strokes jg)))
+                      (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? jg %) (strokes jg)))
+                      (graphattr/add-attr-to-nodes :fontcolor :black (filter #(white? jg %) (strokes jg))))
+        g-stroke-labels (reduce (fn [g s] (graphattr/add-attr g s :label (if stroke-labels? (jgstr s) "&nbsp;")))
+                                g-strokes (strokes jg))
+        g-node-labels (reduce (fn [g n] (graphattr/add-attr g n :label (if node-labels? (jgstr n) "&nbsp;")))
+                              g-stroke-labels (nodes jg))]
+    ;; add bottom node properties (if bottom node exists)
+    (-> g-node-labels
+        (graphattr/add-attr :bottom :label "&perp;")
+        (graphattr/add-attr :bottom :fontsize "32")
+        (graphattr/add-attr :bottom :shape :none))))
+
+(defn visualize
+  [jg & {:keys [node-labels? stroke-labels?] :or {node-labels? true stroke-labels? false}}]
+  (graphio/view (visualize-dot jg node-labels? stroke-labels?)
+                :node {:fillcolor :white :style :filled :fontname "sans"}))
+
+(defn save-pdf
+  [jg fname & {:keys [node-labels? stroke-labels?] :or {node-labels? true stroke-labels? false}}]
+  (let [dot (graphio/dot-str (visualize-dot jg node-labels? stroke-labels?)
+                             :node {:fillcolor :white :style :filled :fontname "sans"})
+        {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
+    (with-open [w (java.io.FileOutputStream. fname)]
+      (.write w pdf))))
+
+;;;;
+;;;; INTERFACING WITH "Changes of Mind"
+;;;;
+
 (defn convert-to-com-input
   [jg contract-ns]
   (format "%s\n\n[%s] ?- [%s]."
@@ -614,6 +657,10 @@
       (when @debugging? (println output))
       (try (parse-com-output jg output)
            (catch Exception _ (println input-str) (println output) (throw (Exception.)))))))
+
+;;;;
+;;;; PROLOG TRANSLATION
+;;;;
 
 (defn convert-to-prolog
   [jg]

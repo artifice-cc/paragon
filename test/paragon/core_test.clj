@@ -11,6 +11,11 @@
                (add-initial :n))]
     (is (initial? jg :n))))
 
+(deftest test-add-nested-vec
+  (let [jg (-> (new-just-graph)
+               (add-nested-vec [[[:a :b] :c] [[:d] :e] [[:d] :c]]))]
+    #_(visualize jg)))
+
 (deftest test-convert-to-prolog
   (let [jg (-> (new-just-graph)
                (add-initial :n))
