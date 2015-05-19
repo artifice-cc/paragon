@@ -187,7 +187,7 @@
                             (forall-just premises stroke)
                             (exists-just [stroke] conclusion))))
                     jg v)]
-    (apply add-initial jg2 (filter #(initial? jg2 %) (nodes jg2)))))
+    (apply add-initial jg2 (filter #(empty? (jgin jg2 %)) (nodes jg2)))))
 
 ;;;;
 ;;;; AXIOMS
