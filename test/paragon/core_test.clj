@@ -3,7 +3,8 @@
             [paragon.core :refer :all]
             [loom.graph :as graph]
             [loom.alg :as alg]
-            [clojure.set :as set])
+            [clojure.set :as set]
+            [clojure.string :as str])
   (:require [taoensso.timbre.profiling :refer (profile)]))
 
 (deftest test-basic-operations
@@ -14,7 +15,7 @@
 (deftest test-add-nested-vec
   (let [jg (-> (new-just-graph)
                (add-nested-vec [[[:a :b] :c] [[:d] :e] [[:d] :c]]))]
-    #_(visualize jg)))
+    #_(visualize jg :jgstr-fn (comp str/upper-case jgstr))))
 
 (deftest test-convert-to-prolog
   (let [jg (-> (new-just-graph)
