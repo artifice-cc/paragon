@@ -47,10 +47,10 @@
   [stroke-or-node]
   (cond (keyword? stroke-or-node)
         (name stroke-or-node)
-        (map? stroke-or-node)
+        (and (map? stroke-or-node) (:id stroke-or-node))
         (str (:id stroke-or-node))
         :else
-        (str stroke-or-node)))
+        (pr-str stroke-or-node)))
 
 (defn jgcolor
   [jg stroke-or-node]
