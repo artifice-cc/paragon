@@ -178,17 +178,6 @@
                   (exists-just [botstroke] :bottom))))
           jg nodesets))
 
-(defn add-nested-vec
-  "Add nodes/strokes as defined from a nested vector structure, e.g.: [[[a b] c] [[d] e]]."
-  [jg v]
-  (let [jg2 (reduce (fn [jg [premises conclusion]]
-                      (let [stroke (format "S%s__%s" (str/join "_" (map jgstr premises)) (jgstr conclusion))]
-                        (-> jg
-                            (forall-just premises stroke)
-                            (exists-just [stroke] conclusion))))
-                    jg v)]
-    (apply add-initial jg2 (filter #(empty? (jgin jg2 %)) (nodes jg2)))))
-
 ;;;;
 ;;;; AXIOMS
 ;;;;
@@ -705,3 +694,137 @@
     (str
       ":- dynamic b/1.\n"
       (str/join "\n" (sort preds)))))
+
+;;;;
+;;;; FANCY CONSTRUCTION
+;;;;
+
+(defn simplify-nested-vec-1
+  [vs]
+  ;; look through every step in the nested-vec vs
+  (loop [subvs (map (fn [[ps c & _]] [ps c]) vs) ;; ignore :hide third element
+         new-vs []]
+    (if (empty? subvs)
+      ;; done looking through steps; return result
+      new-vs
+      (let [v (first subvs) ;; extract next step
+            premises (first v)
+            conclusion (second v)]
+        ;; if there is exactly one premise (and this doesn't point to :bottom)
+        (if (and (= 1 (count premises)) (not= :bottom conclusion))
+          (let [premise (first premises)
+                ;; find steps with sole premise as related step's conclusion
+                conclusion-steps (filter (fn [[ps c & _]] (= c premise)) vs)
+                ;; find steps with conclusion as part of related step's premises
+                premise-steps (filter (fn [[ps _ & _]] (some #(= % conclusion) ps)) vs)]
+            ;; if there is only one such related step, drop this step
+            (cond (and (= 1 (count conclusion-steps)) (= 1 (count premise-steps)))
+                  ;; drop this step, it's redundant; and rewrite related step
+                  (do (println "removing 1" v)
+                      (simplify-nested-vec-1
+                       (conj (filter #(and (not= % (first conclusion-steps)) (not= % v))
+                                     vs)
+                             [(first (first conclusion-steps)) conclusion])))
+                  ;; otherwise, keep this step
+                  :else
+                  (recur (rest subvs) (conj new-vs v))))
+          ;; else, there is more than one premise; keep it
+          (recur (rest subvs) (conj new-vs v)))))))
+
+(defn simplify-nested-vec-2
+  [vs]
+  ;; look through every step in the nested-vec vs
+  (loop [subvs (map (fn [[ps c & _]] [ps c]) vs) ;; ignore :hide third element
+         new-vs []]
+    (if (empty? subvs)
+      ;; done looking through steps; return result
+      new-vs
+      (let [v (first subvs) ;; extract next step
+            premises (first v)
+            conclusion (second v)]
+        ;; if there is exactly one premise (and this doesn't point to :bottom)
+        (if (and (= 1 (count premises)) (not= :bottom conclusion))
+          (let [premise (first premises)
+                conclusion-steps (filter (fn [[_ c & _]] (= c conclusion)) vs)
+                ;; find steps with conclusion as part of related step's premises
+                premise-steps (filter (fn [[ps _ & _]] (some #(= % conclusion) ps)) vs)]
+            ;; if there is only one such related step, drop this step
+            (cond
+              ;; check if this steps conclusion only appears in a
+              ;; single step's premises; if so, we can replace
+              ;; that occurrence of this step's conclusion with
+              ;; its premise
+              (and (= 1 (count premise-steps)) (= 1 (count conclusion-steps)))
+              ;; drop this step, it's redundant; and rewrite related step
+              (do (println "removing 2" v)
+                  (simplify-nested-vec-2
+                   (conj (filter #(and (not= % (first premise-steps)) (not= % v))
+                                 vs)
+                         [(vec (conj (filter #(not= % conclusion) (first (first premise-steps)))
+                                     premise))
+                          (second (first premise-steps))])))
+              ;; otherwise, keep this step
+              :else
+              (recur (rest subvs) (conj new-vs v))))
+          ;; else, there is more than one premise; keep it
+          (recur (rest subvs) (conj new-vs v)))))))
+
+(defn simplify-nested-vec
+  [vs]
+  (simplify-nested-vec-2 (simplify-nested-vec-1 vs)))
+
+(defn build-nested-vec-rec
+  [query id]
+  (if (map? query)
+    [[[query] id]]
+    (let [[sub-vecs ids] (loop [id (inc id) ids [] subquery (rest query) sub-vecs []]
+                           (if (empty? subquery)
+                             [sub-vecs (vec (sort (set ids)))]
+                             (let [sv (build-nested-vec-rec (first subquery) id)
+                                   new-ids (mapcat (fn [[ps c & _]] (filter integer? (conj ps c))) sv)]
+                               (recur (inc (apply max new-ids))
+                                      (concat ids (map second (filter #(and (not= :hide (last %))
+                                                                            (not= :bottom (last %))) sv)))
+                                      (rest subquery)
+                                      (concat sub-vecs sv)))))
+          immediate-ids (vec (take (count (rest query)) ids))
+          next-id (inc (apply max ids))]
+      (case (first query)
+        "OR"
+        (vec (concat sub-vecs (map (fn [im-id] [[im-id] id]) immediate-ids)))
+        "AND"
+        (conj sub-vecs [immediate-ids id])
+        "NOT"
+        (let [im-id (first immediate-ids)]
+          (conj (vec (for [[ps c & _] sub-vecs]
+                       (if (= c im-id)
+                         [ps c :hide]
+                         [ps c])))
+                [[im-id next-id] :bottom]
+                [[next-id] id]))
+        []))))
+
+(defn add-nested-vec
+  "Add nodes/strokes as defined from a nested vector structure, e.g.: [[[a b] c] [[d] e]]."
+  [jg v]
+  (let [jg2 (reduce (fn [jg [premises conclusion]]
+                      (let [stroke (format "S%s__%s" (str/join "_" (map jgstr premises)) (jgstr conclusion))]
+                        (-> jg
+                            (forall-just premises stroke)
+                            (exists-just [stroke] conclusion))))
+                    jg v)]
+    (apply add-initial jg2 (filter #(empty? (jgin jg2 %)) (nodes jg2)))))
+
+(defn build-from-query
+  [query goal-nodes]
+  (let [jg (new-just-graph)
+        nested-vec (build-nested-vec-rec query 1)
+        nested-vec-goals (vec (concat nested-vec (for [goal goal-nodes] [[1] goal])))
+        simp-nested-vec-goals (simplify-nested-vec nested-vec-goals)
+        jg-added (add-nested-vec jg simp-nested-vec-goals)]
+    ;; set initial black nodes for NOT operators
+    (spread-black
+     (reduce assert-black jg-added (apply concat (for [n (nodes jg-added)]
+                                                   (if (and (number? n) (initial? jg-added n))
+                                                     [n (format ".%d" n)] [])))))))
+
