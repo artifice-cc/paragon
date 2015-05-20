@@ -1,21 +1,17 @@
 (ns paragon.core-test
   (:require [clojure.test :refer :all]
             [paragon.core :refer :all]
-            [loom.graph :as graph]
-            [loom.alg :as alg]
-            [clojure.set :as set]
-            [clojure.string :as str])
-  (:require [taoensso.timbre.profiling :refer (profile)]))
+            [paragon.axioms :refer :all]
+            [paragon.coloring :refer :all]
+            [paragon.visualization :refer :all]
+            [paragon.interfaces :refer :all]
+            [paragon.builders :refer :all]
+            [paragon.strategies :refer :all]))
 
 (deftest test-basic-operations
   (let [jg (-> (new-just-graph)
                (add-initial :n))]
     (is (initial? jg :n))))
-
-(deftest test-add-nested-vec
-  (let [jg (-> (new-just-graph)
-               (add-nested-vec [[[:a :b] :c] [[:d] :e] [[:d] :c]]))]
-    #_(visualize jg :jgstr-fn (comp str/upper-case jgstr))))
 
 (deftest test-convert-to-prolog
   (let [jg (-> (new-just-graph)
@@ -65,9 +61,6 @@
                (add-initial :j1 :j2 :j3 :j4 :h2)
                (add-inconsistencies [:h1 :h2 :h3]))
         jg-abduced (abduce jg [:s1 :s2 :s3 :s4])]
-    #_(visualize jg)
-    #_(visualize jg-abduced)
-    #_(save-pdf jg-expanded "test.pdf")
     (is (= #{:h1 :h2 :j1 :j2 :j3 :s1 :s2 :s4} (set (believed jg-abduced))))
     #_(is (= "h1 :- j2, j1.\nh1 :- not(h2).\nh1 :- not(h3).\nh2 :- not(h1).\nh2 :- not(h3).\nh3 :- j4, j3, j2.\nh3 :- not(h1).\nh3 :- not(h2).\ns1 :- h1.\ns1 :- h2.\ns2 :- h1.\ns3 :- h3.\ns4 :- h2.\ns4 :- h3." (convert-to-prolog jg)))))
 
@@ -121,7 +114,7 @@
                                     [:G2 :I5] [:G3 :I3] [:G5 :I2] [:G7 :I7]))
         jg-abduced (abduce jg [:E1 :E2 :E3 :E4 :E5 :E6 :E7
                                 :E8 :E9 :E10 :E11 :E12 :E13
-                                :E14 :E15 :E16 :E17])
+                                :E14 :E16 :E17])
         jg-contract-e16 (contract jg-abduced [:E16])
         jg-contract-e17-e16 (contract jg-contract-e16 [:E17])
         jg-contract-i4 (contract jg-abduced [:I4])
@@ -139,23 +132,6 @@
     (is (not ((set (believed jg-contract-e17-e16)) :E17)))
     (is (not ((set (believed jg-contract-i4)) :I4)))
     (is (not ((set (believed jg-contract-i1-i4)) :I1)))))
-
-(def g-transpose
-  (memoize (fn [g] (graph/transpose g))))
-
-(def get-ancestors
-  (memoize (fn [g n]
-             (let [gt (g-transpose g)]
-               (alg/post-traverse gt n)))))
-
-(defn strategy-pref-ancestors
-  [jg ns-or-ss min?]
-  (let [ns (set (filter #(node? jg %) ns-or-ss))
-        n-ancestors (into {} (for [n ns] [n (set (filter #(node? jg %) (get-ancestors (:graph jg) n)))]))
-        ns-sorted (sort-by #(count (set/intersection ns (get n-ancestors %))) ns)]
-    #_(prn n-ancestors)
-    #_(prn (map (fn [n] [n (count (set/intersection ns (get n-ancestors n)))]) ns))
-    (if min? (first ns-sorted) (last ns-sorted))))
 
 (deftest test-contraction-1
     (let [jg (-> (new-just-graph)
@@ -192,9 +168,7 @@
                  (exists-just [:gi :fh] :j)
                  (exists-just [:ab1] :h)
                  (exists-just [:ab2] :g))
-          jg-black (-> jg
-                       (abduce [:b :c :d :e :f :a :g])
-                       (expand [".g"]))
+          jg-black (abduce jg [:b :c :d :e :f :a :g])
           jg-contracted (contract jg-black [:a] :white-strategy #(strategy-pref-ancestors %1 %2 true))]
       #_(println (convert-to-com-input jg [:a]))
       #_(visualize (process-with-com jg [:a] true))
@@ -211,9 +185,7 @@
                  (exists-just [:cd] :f)
                  (forall-just [:e :f] :ef)
                  (exists-just [:ef] :g))
-          jg-black (-> jg
-                       (abduce [:a :b :c :d])
-                       (expand [:g]))
+          jg-black (abduce jg [:a :b :c :d :g])
           jg-contracted (contract jg-black [:b] :white-strategy #(strategy-pref-ancestors %1 %2 true))]
       #_(visualize (process-with-com jg [:b]))
       #_(save-pdf jg-contracted "ex-fdn.pdf")
@@ -261,7 +233,31 @@
                              (range (+ premise-count stroke-count)
                                     (+ premise-count stroke-count stroke-count))))]
     (is (check-structure-axioms jg3))
-    (is (check-color-axioms jg3))
-    (profile :debug :check-structure-axioms (check-structure-axioms jg3))
-    (profile :debug :check-color-axioms (check-color-axioms jg3))
-    (profile :debug :expand (expand jg3 (take expand-count (shuffle (concat (nodes jg3) (strokes jg3))))))))
+    (is (check-color-axioms jg3))))
+
+(deftest test-build-from-query
+  (let [jg-1 (build-from-query :a [:x])
+        jg-2 (build-from-query ["AND" :a :b :c :d] [:x])
+        jg-3 (build-from-query ["OR" :a :b :c :d] [:x])
+        jg-4 (build-from-query ["NOT" :a] [:x])
+        jg-5 (build-from-query ["AND" ["OR" :a :b] :c] [:x])
+        jg-6 (build-from-query ["AND" :c ["OR" :a :b]] [:x])
+        jg-7 (build-from-query ["AND" :c ["OR" :b :a]] [:x])
+        jg-8 (build-from-query ["AND" ["OR" :b :a] :c] [:x])]
+    (is (black? (revise jg-1 [:a]) :x))
+    (is (black? (revise jg-2 [:a :b :c :d]) :x))
+    (is (white? (revise jg-2 [:a :b :c]) :x))
+    (is (white? (revise jg-2 [:a :b]) :x))
+    (is (white? (revise jg-2 [:a]) :x))
+    (is (black? (revise jg-3 [:a :b :c :d]) :x))
+    (is (black? (revise jg-3 [:a :b :c]) :x))
+    (is (black? (revise jg-3 [:a :b]) :x))
+    (is (black? (revise jg-3 [:a]) :x))
+    #_(is (white? (revise jg-4 [:a]) :x))
+    #_(visualize jg-1)
+    #_(visualize jg-2)
+    #_(visualize jg-3)
+    #_(visualize jg-4)
+    #_(visualize jg-5)
+    ))
+
