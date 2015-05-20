@@ -116,29 +116,29 @@
 
 (defn add-nested-vec
   "Add nodes/strokes as defined from a nested vector structure, e.g.: [[[a b] c] [[d] e]]."
-  [jg v]
-  (let [jg2 (reduce (fn [jg [premises conclusion]]
-                      (let [stroke (format "S%s__%s" (str/join "_" (map jgstr premises)) (jgstr conclusion))]
-                        (-> jg
+  [fdn v]
+  (let [fdn2 (reduce (fn [fdn [premises conclusion]]
+                      (let [stroke (format "S%s__%s" (str/join "_" (map fdnstr premises)) (fdnstr conclusion))]
+                        (-> fdn
                             (forall-just premises stroke)
                             (exists-just [stroke] conclusion))))
-                    jg v)]
-    (apply add-initial jg2 (filter #(empty? (jgin jg2 %)) (nodes jg2)))))
+                    fdn v)]
+    (apply add-initial fdn2 (filter #(empty? (fdnin fdn2 %)) (nodes fdn2)))))
 
 (defn build-from-query
   [query goal-nodes]
-  (let [jg (new-just-graph)
+  (let [fdn (new-fdn)
         nested-vec (build-nested-vec-rec query 1)
         nested-vec-goals (vec (concat nested-vec (for [goal goal-nodes] [[1] goal])))
         simp-nested-vec-goals (simplify-nested-vec nested-vec-goals)
-        jg-added (add-nested-vec jg simp-nested-vec-goals)]
+        fdn-added (add-nested-vec fdn simp-nested-vec-goals)]
     (when @debugging?
       (println "Nested vec:" (with-out-str (clojure.pprint/pprint nested-vec)))
       (println "Nested vec goals:" (with-out-str (clojure.pprint/pprint nested-vec-goals)))
       (println "Simplified nested vec goals:" (with-out-str (clojure.pprint/pprint simp-nested-vec-goals))))
     ;; set initial black nodes for NOT operators
     (spread-black
-     (reduce assert-black-initial jg-added (filter #(and (number? %) (initial? jg-added %)) (nodes jg-added))))))
+     (reduce assert-black-initial fdn-added (filter #(and (number? %) (initial? fdn-added %)) (nodes fdn-added))))))
 
 ;;;;
 ;;;; RANDOM GENERATION
@@ -158,28 +158,28 @@
                 (partition 2 (interleave v-groups (rest v-groups))))))))
 
 (defn remove-bad-stroke
-  [jg]
-  (let [ss (strokes jg)
+  [fdn]
+  (let [ss (strokes fdn)
         bad-stroke (first (filter (fn [s] (some (fn [s2]
                                                   (and (not= s s2)
                                                        ;; find strokes s2 that have an arrow
                                                        ;; to the same node
-                                                       (= (first (jgout jg s))
-                                                          (first (jgout jg s2)))
+                                                       (= (first (fdnout fdn s))
+                                                          (first (fdnout fdn s2)))
                                                        ;; and where s2's incoming arrows
                                                        ;; are subseteq of incoming arrows of s
-                                                       (not-empty (jgin jg s))
-                                                       (not-empty (jgin jg s2))
-                                                       (every? (set (jgin jg s)) (jgin jg s2))))
+                                                       (not-empty (fdnin fdn s))
+                                                       (not-empty (fdnin fdn s2))
+                                                       (every? (set (fdnin fdn s)) (fdnin fdn s2))))
                                                 ss))
                                   ss))]
     (when bad-stroke
-      (remove-node-or-stroke jg bad-stroke))))
+      (remove-node-or-stroke fdn bad-stroke))))
 
 (defn remove-inaccessible
-  [jg]
-  (let [accessible (set (alg/pre-traverse (graph/graph (:graph jg)) (first (shuffle (graph/nodes (:graph jg))))))]
-    (reduce remove-node-or-stroke jg (filter #(not (accessible %)) (graph/nodes (:graph jg))))))
+  [fdn]
+  (let [accessible (set (alg/pre-traverse (graph/graph (:graph fdn)) (first (shuffle (graph/nodes (:graph fdn))))))]
+    (reduce remove-node-or-stroke fdn (filter #(not (accessible %)) (graph/nodes (:graph fdn))))))
 
 (defn gen-random-andor-graph
   [node-count chance-split chance-and inconsistent-count]
@@ -191,34 +191,34 @@
                                   node-groups-squared)
         paired (map (fn [ng] (concat ng (if (> chance-and (rand)) [:forall-just] [:exists-just])))
                     node-groups-cubed)
-        jg (new-just-graph)
-        jg2 (reduce (fn [jg [node-group1 node-group2 linktype]]
+        fdn (new-fdn)
+        fdn2 (reduce (fn [fdn [node-group1 node-group2 linktype]]
                       #_(prn node-group1 node-group2 linktype)
                       (if (= :forall-just linktype)
-                        (reduce (fn [jg n] (-> jg (forall-just node-group1 (format "s%s" n))
+                        (reduce (fn [fdn n] (-> fdn (forall-just node-group1 (format "s%s" n))
                                                (exists-just [(format "s%s" n)] n)))
-                                jg node-group2)
-                        (reduce (fn [jg n1]
-                                  (reduce (fn [jg n2]
-                                            (-> jg (forall-just [n1] (format "s%s_%s" n1 n2))
+                                fdn node-group2)
+                        (reduce (fn [fdn n1]
+                                  (reduce (fn [fdn n2]
+                                            (-> fdn (forall-just [n1] (format "s%s_%s" n1 n2))
                                                 (exists-just [(format "s%s_%s" n1 n2)] n2)))
-                                          jg node-group2))
-                                jg node-group1)))
-                    jg paired)
-        top-nodes (filter (fn [n] (empty? (graph/incoming (:graph jg2) n)))
-                          (nodes jg2))
-        jg-premises (reduce (fn [jg n] (exists-just jg [(format "s%s" n)] n))
-                            jg2 top-nodes)
-        jg-inconsistencies (apply add-inconsistencies jg-premises
+                                          fdn node-group2))
+                                fdn node-group1)))
+                    fdn paired)
+        top-nodes (filter (fn [n] (empty? (graph/incoming (:graph fdn2) n)))
+                          (nodes fdn2))
+        fdn-premises (reduce (fn [fdn n] (exists-just fdn [(format "s%s" n)] n))
+                            fdn2 top-nodes)
+        fdn-inconsistencies (apply add-inconsistencies fdn-premises
                                   (take inconsistent-count
-                                        (shuffle (for [n1 (nodes jg-premises)
-                                                       n2 (shuffle (nodes jg-premises))
+                                        (shuffle (for [n1 (nodes fdn-premises)
+                                                       n2 (shuffle (nodes fdn-premises))
                                                        :when (not= n1 n2)]
                                                    [n1 n2]))))
-        jg-accessible (remove-inaccessible jg-inconsistencies)
+        fdn-accessible (remove-inaccessible fdn-inconsistencies)
         ;; find strokes that fail axiom 7
-        jg-fixed (loop [jg jg-accessible]
-                   (if-let [jg2 (remove-bad-stroke jg)]
-                     (recur jg2) jg))]
-    (remove-inaccessible jg-fixed)))
+        fdn-fixed (loop [fdn fdn-accessible]
+                   (if-let [fdn2 (remove-bad-stroke fdn)]
+                     (recur fdn2) fdn))]
+    (remove-inaccessible fdn-fixed)))
 

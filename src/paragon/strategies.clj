@@ -7,7 +7,7 @@
 (defn spread-abduce-default-strategy
   "Guaranteed that bad-strokes is not empty."
   [_ bad-strokes]
-  (let [best-bad-stroke (first (sort-by jgstr bad-strokes))]
+  (let [best-bad-stroke (first (sort-by fdnstr bad-strokes))]
     (when @debugging?
       (println "Choosing bad stroke:" best-bad-stroke))
     best-bad-stroke))
@@ -15,7 +15,7 @@
 (defn spread-white-default-strategy
   "Guaranteed that bad-nodes is not empty."
   [_ bad-nodes]
-  (let [best-bad-node (last (sort-by jgstr bad-nodes))]
+  (let [best-bad-node (last (sort-by fdnstr bad-nodes))]
     (when @debugging?
       (println "Choosing bad node:" best-bad-node))
     best-bad-node))
@@ -25,21 +25,21 @@
   (rand-nth ns-or-ss))
 
 (defn strategy-pref-min-out-degree
-  [jg ns-or-ss]
+  [fdn ns-or-ss]
   ;; shuffle first so stable-sort picks random among equal bests
-  (first (sort-by #(out-degree jg %) (shuffle ns-or-ss))))
+  (first (sort-by #(out-degree fdn %) (shuffle ns-or-ss))))
 
 (defn strategy-pref-max-out-degree
-  [jg ns-or-ss]
-  (last (sort-by #(out-degree jg %) (shuffle ns-or-ss))))
+  [fdn ns-or-ss]
+  (last (sort-by #(out-degree fdn %) (shuffle ns-or-ss))))
 
 (defn strategy-pref-min-in-degree
-  [jg ns-or-ss]
-  (first (sort-by #(in-degree jg %) (shuffle ns-or-ss))))
+  [fdn ns-or-ss]
+  (first (sort-by #(in-degree fdn %) (shuffle ns-or-ss))))
 
 (defn strategy-pref-max-in-degree
-  [jg ns-or-ss]
-  (last (sort-by #(in-degree jg %) (shuffle ns-or-ss))))
+  [fdn ns-or-ss]
+  (last (sort-by #(in-degree fdn %) (shuffle ns-or-ss))))
 
 (def g-transpose
   (memoize (fn [g] (graph/transpose g))))
@@ -50,10 +50,10 @@
                (alg/post-traverse gt n)))))
 
 (defn strategy-pref-ancestors
-  [jg ns-or-ss min?]
+  [fdn ns-or-ss min?]
   ;; we know we're only dealing with nodes
   (let [ns (set ns-or-ss)
-        n-ancestors (into {} (for [n ns] [n (set (filter #(node? jg %) (get-ancestors (:graph jg) n)))]))
+        n-ancestors (into {} (for [n ns] [n (set (filter #(node? fdn %) (get-ancestors (:graph fdn) n)))]))
         ;; shuffle first so stable-sort picks random among equal bests
         ns-sorted (sort-by #(count (set/intersection ns (get n-ancestors %))) (shuffle (seq ns)))]
     #_(prn n-ancestors)
@@ -61,88 +61,88 @@
     (if min? (first ns-sorted) (last ns-sorted))))
 
 (defn strategy-pref-ancestors-abd
-  [jg ns-or-ss min?]
+  [fdn ns-or-ss min?]
   ;; we know we're only dealing with strokes
   (let [stroke-ancestor-counts (for [s ns-or-ss]
-                                 (let [ns (jgin jg s)
-                                       anc-counts (sort (map (fn [n] (count (filter #(node? jg %) (get-ancestors (:graph jg) n)))) ns))]
+                                 (let [ns (fdnin fdn s)
+                                       anc-counts (sort (map (fn [n] (count (filter #(node? fdn %) (get-ancestors (:graph fdn) n)))) ns))]
                                    [s (if min? (first anc-counts) (last anc-counts))]))
         ss-sorted (sort-by second stroke-ancestor-counts)]
     (if min? (first (first ss-sorted)) (first (last ss-sorted)))))
 
 (defn strategy-pref-min-ancestors-abd-max-in-degree
-  [jg ns-or-ss]
+  [fdn ns-or-ss]
   ;; we know we're only dealing with strokes
   (let [stroke-ancestor-counts (for [s ns-or-ss]
-                                 (let [ns (jgin jg s)
-                                       anc-counts (sort (map (fn [n] (count (filter #(node? jg %) (get-ancestors (:graph jg) n)))) ns))]
+                                 (let [ns (fdnin fdn s)
+                                       anc-counts (sort (map (fn [n] (count (filter #(node? fdn %) (get-ancestors (:graph fdn) n)))) ns))]
                                    [s (first anc-counts)]))
         ss-sorted (sort-by second stroke-ancestor-counts)
         min-count (second (first ss-sorted))
         equal-min (map first (take-while (fn [[n c]] (= c min-count)) ss-sorted))]
-    (strategy-pref-max-in-degree jg equal-min)))
+    (strategy-pref-max-in-degree fdn equal-min)))
 
 (defn strategy-pref-max-in-degree-min-ancestors-abd
-  [jg ns-or-ss]
+  [fdn ns-or-ss]
   ;; we know we're only dealing with strokes
-  (let [ss-sorted (reverse (sort-by second (map (fn [n] [n (in-degree jg n)]) (shuffle ns-or-ss))))
+  (let [ss-sorted (reverse (sort-by second (map (fn [n] [n (in-degree fdn n)]) (shuffle ns-or-ss))))
         max-count (second (first ss-sorted))
         equal-max (map first (take-while (fn [[n c]] (= c max-count)) ss-sorted))]
-    (strategy-pref-ancestors-abd jg equal-max true)))
+    (strategy-pref-ancestors-abd fdn equal-max true)))
 
 (defn strategy-pref-min-ancestors-abd-min-in-degree
-  [jg ns-or-ss]
+  [fdn ns-or-ss]
   ;; we know we're only dealing with strokes
   (let [stroke-ancestor-counts (for [s ns-or-ss]
-                                 (let [ns (jgin jg s)
-                                       anc-counts (sort (map (fn [n] (count (filter #(node? jg %) (get-ancestors (:graph jg) n)))) ns))]
+                                 (let [ns (fdnin fdn s)
+                                       anc-counts (sort (map (fn [n] (count (filter #(node? fdn %) (get-ancestors (:graph fdn) n)))) ns))]
                                    [s (first anc-counts)]))
         ss-sorted (sort-by second stroke-ancestor-counts)
         min-count (second (first ss-sorted))
         equal-min (map first (take-while (fn [[n c]] (= c min-count)) ss-sorted))]
-    (strategy-pref-min-in-degree jg equal-min)))
+    (strategy-pref-min-in-degree fdn equal-min)))
 
 (defn strategy-pref-min-in-degree-min-ancestors-abd
-  [jg ns-or-ss]
+  [fdn ns-or-ss]
   ;; we know we're only dealing with strokes
-  (let [ss-sorted (sort-by second (map (fn [n] [n (in-degree jg n)]) (shuffle ns-or-ss)))
+  (let [ss-sorted (sort-by second (map (fn [n] [n (in-degree fdn n)]) (shuffle ns-or-ss)))
         min-count (second (first ss-sorted))
         equal-min (map first (take-while (fn [[n c]] (= c min-count)) ss-sorted))]
-    (strategy-pref-ancestors-abd jg equal-min true)))
+    (strategy-pref-ancestors-abd fdn equal-min true)))
 
 (defn strategy-pref-min-ancestors-min-in-degree
-  [jg ns-or-ss]
-  (let [ns (set (filter #(node? jg %) ns-or-ss))
-        n-ancestors (into {} (for [n ns] [n (set (filter #(node? jg %) (get-ancestors (:graph jg) n)))]))
+  [fdn ns-or-ss]
+  (let [ns (set (filter #(node? fdn %) ns-or-ss))
+        n-ancestors (into {} (for [n ns] [n (set (filter #(node? fdn %) (get-ancestors (:graph fdn) n)))]))
         ;; shuffle first so stable-sort picks random among equal bests
         ns-sorted (sort-by second (map (fn [n] [n (count (set/intersection ns (get n-ancestors n)))]) (shuffle (seq ns))))
         min-count (second (first ns-sorted))
         equal-min (map first (take-while (fn [[n c]] (= c min-count)) ns-sorted))]
-    (strategy-pref-min-in-degree jg equal-min)))
+    (strategy-pref-min-in-degree fdn equal-min)))
 
 (defn strategy-pref-min-in-degree-min-ancestors
-  [jg ns-or-ss]
-  (let [ns-sorted (sort-by second (map (fn [n] [n (in-degree jg n)]) (shuffle ns-or-ss)))
+  [fdn ns-or-ss]
+  (let [ns-sorted (sort-by second (map (fn [n] [n (in-degree fdn n)]) (shuffle ns-or-ss)))
         min-count (second (first ns-sorted))
         equal-min (map first (take-while (fn [[n c]] (= c min-count)) ns-sorted))]
-    (strategy-pref-ancestors jg equal-min true)))
+    (strategy-pref-ancestors fdn equal-min true)))
 
 (defn strategy-pref-min-ancestors-max-in-degree
-  [jg ns-or-ss]
-  (let [ns (set (filter #(node? jg %) ns-or-ss))
-        n-ancestors (into {} (for [n ns] [n (set (filter #(node? jg %) (get-ancestors (:graph jg) n)))]))
+  [fdn ns-or-ss]
+  (let [ns (set (filter #(node? fdn %) ns-or-ss))
+        n-ancestors (into {} (for [n ns] [n (set (filter #(node? fdn %) (get-ancestors (:graph fdn) n)))]))
         ;; shuffle first so stable-sort picks random among equal bests
         ns-sorted (sort-by second (map (fn [n] [n (count (set/intersection ns (get n-ancestors n)))]) (shuffle (seq ns))))
         min-count (second (first ns-sorted))
         equal-min (map first (take-while (fn [[n c]] (= c min-count)) ns-sorted))]
-    (strategy-pref-max-in-degree jg equal-min)))
+    (strategy-pref-max-in-degree fdn equal-min)))
 
 (defn strategy-pref-max-in-degree-min-ancestors
-  [jg ns-or-ss]
-  (let [ns-sorted (reverse (sort-by second (map (fn [n] [n (in-degree jg n)]) (shuffle ns-or-ss))))
+  [fdn ns-or-ss]
+  (let [ns-sorted (reverse (sort-by second (map (fn [n] [n (in-degree fdn n)]) (shuffle ns-or-ss))))
         max-count (second (first ns-sorted))
         equal-max (map first (take-while (fn [[n c]] (= c max-count)) ns-sorted))]
-    (strategy-pref-ancestors jg equal-max true)))
+    (strategy-pref-ancestors fdn equal-max true)))
 
 (defn find-white-strategy
   [strat-name]

@@ -15,28 +15,28 @@
 ;;;; PRIMITIVES / DATA STRUCTURES
 ;;;;
 
-(defn new-just-graph
+(defn new-fdn
   []
   {:types {}
    :coloring {}
    :graph (graph/digraph)})
 
 (defn nodes
-  [jg]
-  (map first (filter (fn [[_ t]] (= t :node)) (seq (:types jg)))))
+  [fdn]
+  (map first (filter (fn [[_ t]] (= t :node)) (seq (:types fdn)))))
 
 (defn strokes
-  [jg]
-  (map first (filter (fn [[_ t]] (= t :stroke)) (seq (:types jg)))))
+  [fdn]
+  (map first (filter (fn [[_ t]] (= t :stroke)) (seq (:types fdn)))))
 
 (defn remove-node-or-stroke
-  [jg node-or-stroke]
-  (-> jg
+  [fdn node-or-stroke]
+  (-> fdn
       (update-in [:graph] graph/remove-nodes node-or-stroke)
       (update-in [:types] dissoc node-or-stroke)
       (update-in [:coloring] dissoc node-or-stroke)))
 
-(defn jgstr
+(defn fdnstr
   [stroke-or-node]
   (cond (keyword? stroke-or-node)
         (name stroke-or-node)
@@ -45,132 +45,132 @@
         :else
         (pr-str stroke-or-node)))
 
-(defn jgcolor
-  [jg stroke-or-node]
-  (get-in jg [:coloring stroke-or-node] :white))
+(defn fdncolor
+  [fdn stroke-or-node]
+  (get-in fdn [:coloring stroke-or-node] :white))
 
-(defn jgtype
-  [jg stroke-or-node]
-  (get-in jg [:types stroke-or-node]))
+(defn fdntype
+  [fdn stroke-or-node]
+  (get-in fdn [:types stroke-or-node]))
 
 (defn degree
-  [jg stroke-or-node]
-  (+ (graph/in-degree (:graph jg) stroke-or-node)
-     (graph/degree (:graph jg) stroke-or-node)))
+  [fdn stroke-or-node]
+  (+ (graph/in-degree (:graph fdn) stroke-or-node)
+     (graph/degree (:graph fdn) stroke-or-node)))
 
 (defn in-degree
-  [jg stroke-or-node]
-  (graph/in-degree (:graph jg) stroke-or-node))
+  [fdn stroke-or-node]
+  (graph/in-degree (:graph fdn) stroke-or-node))
 
 (defn out-degree
-  [jg stroke-or-node]
-  (graph/degree (:graph jg) stroke-or-node))
+  [fdn stroke-or-node]
+  (graph/degree (:graph fdn) stroke-or-node))
 
 (defn white?
-  [jg stroke-or-node]
-  (= :white (jgcolor jg stroke-or-node)))
+  [fdn stroke-or-node]
+  (= :white (fdncolor fdn stroke-or-node)))
 
 (defn black?
-  [jg stroke-or-node]
-  (= :black (jgcolor jg stroke-or-node)))
+  [fdn stroke-or-node]
+  (= :black (fdncolor fdn stroke-or-node)))
 
 (defn node?
-  [jg stroke-or-node]
-  (= :node (jgtype jg stroke-or-node)))
+  [fdn stroke-or-node]
+  (= :node (fdntype fdn stroke-or-node)))
 
 (defn stroke?
-  [jg stroke-or-node]
-  (= :stroke (jgtype jg stroke-or-node)))
+  [fdn stroke-or-node]
+  (= :stroke (fdntype fdn stroke-or-node)))
 
 (defn believed
   "Returns black nodes."
-  [jg]
-  (filter (fn [n] (black? jg n)) (nodes jg)))
+  [fdn]
+  (filter (fn [n] (black? fdn n)) (nodes fdn)))
 
 (defn disbelieved
   "Returns white nodes."
-  [jg]
-  (filter (fn [n] (white? jg n)) (nodes jg)))
+  [fdn]
+  (filter (fn [n] (white? fdn n)) (nodes fdn)))
 
-(defn jgout
-  [jg stroke-or-node]
-  (graph/neighbors (:graph jg) stroke-or-node))
+(defn fdnout
+  [fdn stroke-or-node]
+  (graph/neighbors (:graph fdn) stroke-or-node))
 
-(defn jgin
-  [jg stroke-or-node]
-  (graph/incoming (:graph jg) stroke-or-node))
+(defn fdnin
+  [fdn stroke-or-node]
+  (graph/incoming (:graph fdn) stroke-or-node))
 
 (defn initial?
-  [jg node]
-  (assert (node? jg node))
+  [fdn node]
+  (assert (node? fdn node))
   ;; this node has a single stroke that has no incoming nodes
-  (and (= 1 (count (jgin jg node)))
-       (empty? (jgin jg (first (jgin jg node))))))
+  (and (= 1 (count (fdnin fdn node)))
+       (empty? (fdnin fdn (first (fdnin fdn node))))))
 
 ;;;;
 ;;;; CONSTRUCTION
 ;;;;
 
 (defn forall-just
-  [jg nodes stroke]
-  (reduce (fn [jg2 node]
-            (-> jg2
+  [fdn nodes stroke]
+  (reduce (fn [fdn2 node]
+            (-> fdn2
                 (assoc-in [:types node] :node)
                 (update-in [:graph] graph/add-edges [node stroke])))
-          (assoc-in jg [:types stroke] :stroke) nodes))
+          (assoc-in fdn [:types stroke] :stroke) nodes))
 
 (defn exists-just
-  [jg strokes node]
-  (reduce (fn [jg2 stroke]
-            (-> jg2
+  [fdn strokes node]
+  (reduce (fn [fdn2 stroke]
+            (-> fdn2
                 (assoc-in [:types stroke] :stroke)
                 (update-in [:graph] graph/add-edges [stroke node])))
-          (assoc-in jg [:types node] :node) strokes))
+          (assoc-in fdn [:types node] :node) strokes))
 
 (defn add-initial
-  [jg & nodes]
-  (reduce (fn [jg2 n]
-            (let [stroke (format ".%s" (jgstr n))]
-              (exists-just jg2 [stroke] n)))
-          jg nodes))
+  [fdn & nodes]
+  (reduce (fn [fdn2 n]
+            (let [stroke (format ".%s" (fdnstr n))]
+              (exists-just fdn2 [stroke] n)))
+          fdn nodes))
 
 (defn- can-explain-single-hyp
   "Link hyp to explananda via an intermediate stroke."
-  [jg hyp explananda]
-  (reduce (fn [jg2 ev]
-            (let [stroke (format "%sEXP%s" (jgstr hyp) (jgstr ev))]
-              (-> jg2
+  [fdn hyp explananda]
+  (reduce (fn [fdn2 ev]
+            (let [stroke (format "%sEXP%s" (fdnstr hyp) (fdnstr ev))]
+              (-> fdn2
                   (forall-just [hyp] stroke)
                   (exists-just [stroke] ev))))
-          jg explananda))
+          fdn explananda))
 
 (defn- can-explain-conjunction-hyp
   "Link each in explanatia to strokes that point to a special conjunction node (one for each explananda),
   which then links to each explananda."
-  [jg explanantia explananda]
-  (reduce (fn [jg2 ev]
-            (let [stroke (format "%sEXP%s" (str/join "AND" (map jgstr explanantia)) (jgstr ev))
-                  jg-hyps-stroke (forall-just jg2 explanantia stroke)]
-              (exists-just jg-hyps-stroke [stroke] ev)))
-          jg explananda))
+  [fdn explanantia explananda]
+  (reduce (fn [fdn2 ev]
+            (let [stroke (format "%sEXP%s" (str/join "AND" (map fdnstr explanantia)) (fdnstr ev))
+                  fdn-hyps-stroke (forall-just fdn2 explanantia stroke)]
+              (exists-just fdn-hyps-stroke [stroke] ev)))
+          fdn explananda))
 
 (defn can-explain
   "The explananda, as a conjunction, justify each of the explanantia."
-  [jg explanantia explananda]
+  [fdn explanantia explananda]
   (assert (and (sequential? explanantia) (sequential? explananda)))
   (if (second explanantia)
-    (can-explain-conjunction-hyp jg explanantia explananda)
-    (can-explain-single-hyp jg (first explanantia) explananda)))
+    (can-explain-conjunction-hyp fdn explanantia explananda)
+    (can-explain-single-hyp fdn (first explanantia) explananda)))
 
 (defn add-inconsistencies
   "Indicate nodes that cannot all be simultaneously believed.
 
-  Usage example: (add-inconsistencies jg [:node1 :node2 :node3] [:node2 :node3] ...)"
-  [jg & nodesets]
-  (reduce (fn [jg2 nodes]
-            (let [botstroke (format "bot_%s" (str/join "-" (map jgstr nodes)))]
-              (-> jg2
+  Usage example: (add-inconsistencies fdn [:node1 :node2 :node3] [:node2 :node3] ...)"
+  [fdn & nodesets]
+  (reduce (fn [fdn2 nodes]
+            (let [botstroke (format "bot_%s" (str/join "-" (map fdnstr nodes)))]
+              (-> fdn2
                   (forall-just nodes botstroke)
                   (exists-just [botstroke] :bottom))))
-          jg nodesets))
+          fdn nodesets))
 

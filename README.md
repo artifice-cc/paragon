@@ -9,19 +9,19 @@ Tennant, Neil. (2012). *Changes of Mind: An Essay on Rational Belief Revision*. 
 
 ### Construction
 
-`(forall-just jg nodes stroke)` -- creates `stroke`, creates/links each of `nodes` to it
+`(forall-just fdn nodes stroke)` -- creates `stroke`, creates/links each of `nodes` to it
 
-`(exists-just jg strokes node)` -- creates `node`, creates/links each of `strokes` to it
+`(exists-just fdn strokes node)` -- creates `node`, creates/links each of `strokes` to it
 
 ### Coloring
 
-`(contract jg node)` -- turns node's color to white and runs spread-white
+`(contract fdn node)` -- turns node's color to white and runs spread-white
 
-`(expand jg node)` -- turns node's color to black and runs spread-black
+`(expand fdn node)` -- turns node's color to black and runs spread-black
 
 ### Visualization
 
-`(visualize jg)`
+`(visualize fdn)`
 
 
 ## Internal datastructure
@@ -98,11 +98,11 @@ Spreading black:
 ## Test cases
 
 ```
-(-> (new-just-graph)
+(-> (new-fdn)
     (forall-just [:b1 :b2 :b3] :stroke1)
     (exists-just [:stroke1] :a))
 
-(-> (new-just-graph)
+(-> (new-fdn)
     (exists-just [:b1 :b2 :b3] :a))
 ```
 
