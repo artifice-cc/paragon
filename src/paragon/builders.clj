@@ -24,18 +24,28 @@
         ;; if there is exactly one premise (and this doesn't point to :bottom)
         (if (and (= 1 (count premises)) (not= :bottom conclusion))
           (let [premise (first premises)
-                ;; find steps with sole premise as related step's conclusion
-                conclusion-steps (filter (fn [[ps c & _]] (= c premise)) vs)
-                ;; find steps with conclusion as part of related step's premises
+                ;; find all steps whose conclusion is this premise
+                conclusion-steps (filter (fn [[_ c & _]] (= c premise)) vs)
+                ;; find steps where this conclusion is among the step's premises
                 premise-steps (filter (fn [[ps _ & _]] (some #(= % conclusion) ps)) vs)]
-            ;; if there is only one such related step, drop this step
+            ;; if there is only one step that has this premise as its conclusion,
+            ;; and there is only one step that has this conclusion as its premise,
+            ;; then drop this step and connect the other conclusion and premise
             (cond (and (= 1 (count conclusion-steps)) (= 1 (count premise-steps)))
                   ;; drop this step, it's redundant; and rewrite related step
-                  (do (when @debugging? (println "Simplifying nested vec (1) by removing" v))
+                  (do (when @debugging?
+                        (println "Simplifying nested vec (1) by removing" v
+                                 "which has sole conclusion-step" (first conclusion-steps)
+                                 "and sole premise-step" (first premise-steps)))
                       (simplify-nested-vec-1
-                       (conj (filter #(and (not= % (first conclusion-steps)) (not= % v))
-                                     vs)
-                             [(first (first conclusion-steps)) conclusion])))
+                       (conj
+                        ;; drop the step, and drop the conclusion intermediate step
+                        (filter #(and (not= (take 2 %) v)
+                                      (not= % (first conclusion-steps)))
+                                vs)
+                        ;; add a new link: premise of step where this was a conclusion,
+                        ;; and this conclusion
+                        [(first (first conclusion-steps)) conclusion])))
                   ;; otherwise, keep this step
                   :else
                   (recur (rest subvs) (conj new-vs v))))
@@ -92,9 +102,10 @@
                            (if (empty? subquery)
                              [sub-vecs (vec (sort (set ids)))]
                              (let [sv (build-nested-vec-rec (first subquery) id)
-                                   new-ids (mapcat (fn [[ps c & _]] (filter integer? (conj ps c))) sv)]
-                               (recur (inc (apply max new-ids))
-                                      (conj ids id)
+                                   new-ids (mapcat (fn [[ps c & _]] (filter integer? (conj ps c))) sv)
+                                   next-id (inc (apply max new-ids))]
+                               (recur next-id
+                                      (concat ids new-ids [id])
                                       (rest subquery)
                                       (concat sub-vecs sv)))))
           immediate-ids (vec (take (count (rest query)) ids))
@@ -133,9 +144,9 @@
         simp-nested-vec-goals (simplify-nested-vec nested-vec-goals)
         fdn-added (add-nested-vec fdn simp-nested-vec-goals)]
     (when @debugging?
-      (println "Nested vec:" (with-out-str (clojure.pprint/pprint nested-vec)))
-      (println "Nested vec goals:" (with-out-str (clojure.pprint/pprint nested-vec-goals)))
-      (println "Simplified nested vec goals:" (with-out-str (clojure.pprint/pprint simp-nested-vec-goals))))
+      (println "Nested vec:\n" (with-out-str (clojure.pprint/pprint nested-vec)))
+      (println "Nested vec goals:\n" (with-out-str (clojure.pprint/pprint nested-vec-goals)))
+      (println "Simplified nested vec goals:\n" (with-out-str (clojure.pprint/pprint simp-nested-vec-goals))))
     fdn-added))
 
 ;;;;

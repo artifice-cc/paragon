@@ -1,4 +1,4 @@
-(defproject cc.artifice/paragon "2.0.3"
+(defproject cc.artifice/paragon "2.0.4"
   :description "An implementation and expansion of Neil Tennant's belief contraction system documented in Changes of Mind (2012, Oxford Univ. Press)."
   :url "http://paragon.artifice.cc"
   :license {:name "Eclipse Public License"
