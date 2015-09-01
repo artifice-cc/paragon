@@ -165,6 +165,14 @@
           (do (when @debugging? (println "Axioms failed in spread-black.\n\n"))
               fdn))))))
 
+(defn expand
+  "Only colors black, and only downwards. 'bottom' node may be colored black (which is inconsistent)."
+  [fdn nodes]
+  (assert (sequential? nodes))
+  (let [fdn-asserted (reduce assert-black fdn nodes)
+        fdn-asserted-initial (reduce assert-black-initial fdn (filter #(initial? fdn %) nodes))]
+    (spread-black fdn-asserted-initial)))
+
 (defn contract
   "Only colors white (upwards and downwards). A \"strategy\" is needed. Uses white-strategy for now."
   [fdn nodes & {:keys [white-strategy]
@@ -176,6 +184,20 @@
     ;; if it didn't work out (no way to spread-white consistently), return nil
     (if (check-color-axioms fdn-whitened)
       fdn-whitened
+      nil)))
+
+(defn revise
+  "Only colors black, and only downwards, except when 'bottom' is colored black.
+  A white-strategy is needed in case 'bottom' is turned black and contraction is required."
+  [fdn nodes & {:keys [white-strategy]
+               :or {white-strategy spread-white-default-strategy}}]
+  (let [fdn-blackened (expand fdn nodes)]
+    (cond
+      (check-color-axioms fdn-blackened)
+      fdn-blackened
+      (black? fdn-blackened :bottom)
+      (contract fdn-blackened [:bottom] :white-strategy white-strategy)
+      :else
       nil)))
 
 (defn abduce
@@ -196,24 +218,3 @@
       :else
       nil)))
 
-(defn expand
-  "Only colors black, and only downwards. 'bottom' node may be colored black (which is inconsistent)."
-  [fdn nodes]
-  (assert (sequential? nodes))
-  (let [fdn-asserted (reduce assert-black fdn nodes)
-        fdn-asserted-initial (reduce assert-black-initial fdn (filter #(initial? fdn %) nodes))]
-    (spread-black fdn-asserted-initial)))
-
-(defn revise
-  "Only colors black, and only downwards, except when 'bottom' is colored black.
-  A white-strategy is needed in case 'bottom' is turned black and contraction is required."
-  [fdn nodes & {:keys [white-strategy]
-               :or {white-strategy spread-white-default-strategy}}]
-  (let [fdn-blackened (expand fdn nodes)]
-    (cond
-      (check-color-axioms fdn-blackened)
-      fdn-blackened
-      (black? fdn-blackened :bottom)
-      (contract fdn-blackened [:bottom] :white-strategy white-strategy)
-      :else
-      nil)))

@@ -86,7 +86,7 @@
 
 (defn build-nested-vec-rec
   [query id]
-  (if (not (vector? query))
+  (if (not (or (vector? query) (list? query)))
     [[[query] id]]
     (let [[sub-vecs ids] (loop [id (inc id) ids [] subquery (rest query) sub-vecs []]
                            (if (empty? subquery)
