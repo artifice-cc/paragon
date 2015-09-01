@@ -136,9 +136,7 @@
       (println "Nested vec:" (with-out-str (clojure.pprint/pprint nested-vec)))
       (println "Nested vec goals:" (with-out-str (clojure.pprint/pprint nested-vec-goals)))
       (println "Simplified nested vec goals:" (with-out-str (clojure.pprint/pprint simp-nested-vec-goals))))
-    ;; set initial black nodes for NOT operators
-    (spread-black
-     (reduce assert-black-initial fdn-added (filter #(and (number? %) (initial? fdn-added %)) (nodes fdn-added))))))
+    fdn-added))
 
 ;;;;
 ;;;; RANDOM GENERATION
