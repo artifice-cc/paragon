@@ -61,7 +61,7 @@
                (add-initial :j1 :j2 :j3 :j4 :h2)
                (add-inconsistencies [:h1 :h2 :h3]))
         fdn-abduced (abduce fdn [:s1 :s2 :s3 :s4])]
-    (is (= #{:h1 :h2 :j1 :j2 :j3 :s1 :s2 :s4} (set (believed fdn-abduced))))
+    (is (= #{:h2 :h3 :j2 :j3 :j4 :s1 :s3 :s4} (set (believed fdn-abduced))))
     #_(is (= "h1 :- j2, j1.\nh1 :- not(h2).\nh1 :- not(h3).\nh2 :- not(h1).\nh2 :- not(h3).\nh3 :- j4, j3, j2.\nh3 :- not(h1).\nh3 :- not(h2).\ns1 :- h1.\ns1 :- h2.\ns2 :- h1.\ns3 :- h3.\ns4 :- h2.\ns4 :- h3." (convert-to-prolog fdn)))))
 
 (deftest test-convert-to-prolog
@@ -112,26 +112,31 @@
                (can-explain [:I8] [:E17])
                (add-inconsistencies [:G1 :I1] [:G1 :I8] [:I1 :I8]
                                     [:G2 :I5] [:G3 :I3] [:G5 :I2] [:G7 :I7]))
+        ;; _ (turn-on-debugging)
+        ;; _ (println "****************")
         fdn-abduced (abduce fdn [:E1 :E2 :E3 :E4 :E5 :E6 :E7
-                                :E8 :E9 :E10 :E11 :E12 :E13
-                                :E14 :E16 :E17])
+                                 :E8 :E9 :E10 :E11 :E12 :E13
+                                 :E14 :E16 :E17])
+        ;; _ (turn-off-debugging)
+        ;; _ (println "****************")
         fdn-contract-e16 (contract fdn-abduced [:E16])
-        fdn-contract-e17-e16 (contract fdn-contract-e16 [:E17])
+        fdn-contract-e16-e17 (contract fdn-contract-e16 [:E17])
         fdn-contract-i4 (contract fdn-abduced [:I4])
         fdn-contract-i1-i4 (contract fdn-contract-i4 [:I1])]
     (is (check-structure-axioms fdn-abduced))
-    (is (check-color-axioms fdn-abduced))
-    (is (= #{:E10 :E11 :E12 :E13 :E1 :E14 :E7 :E2 :E3 :E4 :E6 :E8 :E9
-             :G1 :G5 :G2 :G3 :G4 :G6 :G7 :G8 :I4a :I6}
-           (set (believed fdn-abduced))))
     #_(visualize fdn-abduced)
+    (is (check-color-axioms fdn-abduced))
+    (is (= #{:E17 :E5 :E10 :E11 :E12 :E13 :E7 :E2 :E3 :E4 :E6 :E8 :E9
+             :G2 :G3 :G4 :G6 :G7 :G8 :I8 :I2 :I4a :I6 :I4}
+           (set (believed fdn-abduced))))
+    #_(visualize fdn-contract-e16)
     (is (check-structure-axioms fdn-contract-e16))
-    (is (check-color-axioms fdn-contract-e16))
-    (is (check-color-axioms fdn-contract-e17-e16))
-    (is (not ((set (believed fdn-contract-e16)) :E16)))
-    (is (not ((set (believed fdn-contract-e17-e16)) :E17)))
-    (is (not ((set (believed fdn-contract-i4)) :I4)))
-    (is (not ((set (believed fdn-contract-i1-i4)) :I1)))))
+    (is (check-color-axioms fdn-contract-e16))    
+    (is (check-color-axioms fdn-contract-e16-e17))
+    (is (not (black? fdn-contract-e16 :E16)))
+    (is (not (black? fdn-contract-e16-e17 :E17)))
+    (is (not (black? fdn-contract-i4 :I4)))
+    (is (not (black? fdn-contract-i1-i4 :I1)))))
 
 (deftest test-contraction-1
     (let [fdn (-> (new-fdn)
@@ -261,3 +266,83 @@
     #_(visualize fdn-5)
     ))
 
+(deftest test-priority-example
+  (let [fdn (-> (new-fdn)
+                (add-initial :t :x :y)
+                (can-explain [:t] [:w :z])
+                (can-explain [:w] [:v])
+                (can-explain [:x :y] [:z])
+                (can-explain [:z] [:p]))
+        fdn-z (abduce fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        ;;        _ (println "*************")
+        ;;        _ (turn-on-debugging)
+        fdn-z-negw-negp (contract fdn-z-negw [:p])
+        ;;        _ (turn-off-debugging)
+        ;;        _ (println "*************")
+        fdn-z-negw-negx (contract fdn-z-negw [:x])
+        fdn-z-negw-w (abduce fdn-z-negw [:w])
+        fdn-z-negw-negx-w (abduce fdn-z-negw-negx [:w])
+        fdn-z-negw-negx-w-negp (contract fdn-z-negw-negx-w [:p])
+        fdn-t (abduce fdn [:t])
+        fdn-t-negt (contract fdn-t [:t])
+        fdn-xy (abduce fdn [:x :y])
+        fdn-xy-negxy (contract fdn-xy [:x :y])
+        fdn-xy-p (abduce fdn-xy [:p])
+        fdn-xy-p-negxy (contract fdn-xy-p [:x :y])
+        fdn-w (abduce fdn [:w])
+        fdn-w-negp (contract fdn-w [:p])
+        fdn-p (abduce fdn [:p])
+        fdn-p-negxy (contract fdn-p [:x :y])]
+    #_(visualize fdn-w)
+    #_(visualize fdn-w-negp)
+    #_(visualize fdn-z-negw)
+    #_(visualize fdn-z-negw-negp)
+    #_(visualize fdn-xy-p)
+    #_(visualize fdn-xy-p-negxy)
+    #_(visualize fdn-xy-p)
+    #_(visualize fdn-xy-p-negxy)
+    (is (= #{:z :p :t :w :v} (set (believed fdn-z))))
+    (is (= #{:z :p :x :y} (set (believed fdn-z-negw))))
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:y} (set (believed fdn-z-negw-negp))))
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:y} (set (believed fdn-z-negw-negx))))
+    (is (= #{:z :p :t :w :v :x :y} (set (believed fdn-z-negw-w))))
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:z :p :t :w :v :y} (set (believed fdn-z-negw-negx-w))))
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:y} (set (believed fdn-z-negw-negx-w-negp))))
+    (is (= #{} (set (believed fdn-t-negt))))
+    (is (= #{:x :y :z :p} (set (believed fdn-xy))))
+    (is (= #{} (set (believed fdn-xy-negxy))))
+    (is (= #{:p :z :x :y} (set (believed fdn-xy-p))))
+    (is (= #{:p :z :t :w :v} (set (believed fdn-xy-p-negxy))))))
+
+(deftest test-priority-example-inconsistencies
+  (let [fdn (-> (new-fdn)
+                (add-initial :t :x :y)
+                (can-explain [:t] [:w :z])
+                (can-explain [:w] [:v])
+                (can-explain [:x :y] [:z])
+                (can-explain [:z] [:p])
+                (add-inconsistencies [:t :x]))
+        fdn-z (abduce fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-t (abduce fdn-z-negw [:t])
+        fdn-z-negw-t-negz (contract fdn-z-negw-t [:z])
+        fdn-z-negw-t-negz-p (abduce fdn-z-negw-t-negz [:p])
+        ;; _ (println "*************")
+        ;; _ (turn-on-debugging)
+        fdn-z-negw-t-negz-p-negy (contract fdn-z-negw-t-negz-p [:y])
+        ;; _ (println "*************")
+        ;; _ (turn-off-debugging)
+        ]
+    #_(visualize fdn-z-negw-t-negz-p)
+    #_(visualize fdn-z-negw-t-negz-p-negy)
+    (is (= #{:z :p :t :w :v} (set (believed fdn-z))))
+    (is (= #{:z :p :x :y} (set (believed fdn-z-negw))))
+    (is (= #{:z :p :t :w :v :y} (set (believed fdn-z-negw-t))))
+    (is (= #{:y} (set (believed fdn-z-negw-t-negz))))
+    (is (= #{:p :z :x :y} (set (believed fdn-z-negw-t-negz-p))))
+    (is (= #{:z :p :v :w :t} (set (believed fdn-z-negw-t-negz-p-negy))))))

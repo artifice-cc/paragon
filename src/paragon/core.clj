@@ -19,6 +19,9 @@
   []
   {:types {}
    :coloring {}
+   :priorities {} ;; key = node, val = priority # indicating when changed state
+   :observed {} ;; key = node, val = priority # indicating when observed
+   :priority-counter 0
    :graph (graph/digraph)})
 
 (defn nodes
@@ -34,7 +37,8 @@
   (-> fdn
       (update-in [:graph] graph/remove-nodes node-or-stroke)
       (update-in [:types] dissoc node-or-stroke)
-      (update-in [:coloring] dissoc node-or-stroke)))
+      (update-in [:coloring] dissoc node-or-stroke)
+      (update-in [:priorities] dissoc node-or-stroke)))
 
 (defn fdnstr
   [stroke-or-node]
@@ -42,6 +46,8 @@
         (name stroke-or-node)
         (and (map? stroke-or-node) (:id stroke-or-node))
         (str (:id stroke-or-node))
+        (string? stroke-or-node)
+        stroke-or-node
         :else
         (pr-str stroke-or-node)))
 
@@ -52,19 +58,6 @@
 (defn fdntype
   [fdn stroke-or-node]
   (get-in fdn [:types stroke-or-node]))
-
-(defn degree
-  [fdn stroke-or-node]
-  (+ (graph/in-degree (:graph fdn) stroke-or-node)
-     (graph/degree (:graph fdn) stroke-or-node)))
-
-(defn in-degree
-  [fdn stroke-or-node]
-  (graph/in-degree (:graph fdn) stroke-or-node))
-
-(defn out-degree
-  [fdn stroke-or-node]
-  (graph/degree (:graph fdn) stroke-or-node))
 
 (defn white?
   [fdn stroke-or-node]
@@ -82,6 +75,73 @@
   [fdn stroke-or-node]
   (= :stroke (fdntype fdn stroke-or-node)))
 
+(defn fdnout
+  [fdn stroke-or-node]
+  (graph/neighbors (:graph fdn) stroke-or-node))
+
+(defn fdnin
+  [fdn stroke-or-node]
+  (graph/incoming (:graph fdn) stroke-or-node))
+
+(defn fdnpriority
+  [fdn stroke-or-node]
+  (if (node? fdn stroke-or-node)
+    ;; node
+    (if (= :bottom stroke-or-node)
+      ;; bottom has 'infinite' priority
+      Integer/MAX_VALUE
+      (get-in fdn [:priorities stroke-or-node] 0))
+    ;; stroke; find max of priorities of incoming nodes
+    (let [in (fdnin fdn stroke-or-node)]
+      ;; we don't have infinite recursion because only nodes point to strokes,
+      ;; and fdnpriority on a node has no recursive call
+      (if (empty? in)
+        0 ;; top strokes always have priority 0
+        (apply max (map #(fdnpriority fdn %) in))))))
+
+(defn update-priority
+  [fdn node]
+  (assert (node? fdn node))
+  (assoc-in fdn [:priorities node] (inc (fdnpriority fdn node))))
+
+(defn observed-priority
+  [fdn stroke-or-node]
+  (if (node? fdn stroke-or-node)
+    ;; node
+    (if (= :bottom stroke-or-node)
+      ;; bottom has 'infinite' priority
+      Integer/MAX_VALUE
+      (get-in fdn [:observed stroke-or-node] 0))
+    ;; stroke; find max of priorities of incoming nodes
+    (let [in (fdnin fdn stroke-or-node)]
+      ;; we don't have infinite recursion because only nodes point to strokes,
+      ;; and fdnpriority on a node has no recursive call
+      (if (empty? in)
+        0 ;; top strokes always have priority 0
+        (apply max (map #(observed-priority fdn %) in))))))
+
+(defn observe
+  [fdn node]
+  (assert (node? fdn node))
+  (assoc-in fdn [:observed node] (:priority-counter fdn)))
+
+(defn inc-priority-counter
+  [fdn]
+  (update-in fdn [:priority-counter] inc))
+
+(defn degree
+  [fdn stroke-or-node]
+  (+ (graph/in-degree (:graph fdn) stroke-or-node)
+     (graph/degree (:graph fdn) stroke-or-node)))
+
+(defn in-degree
+  [fdn stroke-or-node]
+  (graph/in-degree (:graph fdn) stroke-or-node))
+
+(defn out-degree
+  [fdn stroke-or-node]
+  (graph/degree (:graph fdn) stroke-or-node))
+
 (defn believed
   "Returns black nodes."
   [fdn]
@@ -92,13 +152,14 @@
   [fdn]
   (filter (fn [n] (white? fdn n)) (nodes fdn)))
 
-(defn fdnout
-  [fdn stroke-or-node]
-  (graph/neighbors (:graph fdn) stroke-or-node))
-
-(defn fdnin
-  [fdn stroke-or-node]
-  (graph/incoming (:graph fdn) stroke-or-node))
+(defn nodes-changed
+  [fdn1 fdn2]
+  (assert (= (:graph fdn1) (:graph fdn2)))
+  (let [bel1 (set (believed fdn1))
+        bel2 (set (believed fdn2))]
+    (filter (fn [n] (or (and (bel1 n) (not (bel2 n)))
+                        (and (not (bel1 n)) (bel2 n))))
+            (nodes fdn1))))
 
 (defn initial?
   [fdn node]
@@ -138,7 +199,7 @@
   "Link hyp to explananda via an intermediate stroke."
   [fdn hyp explananda]
   (reduce (fn [fdn2 ev]
-            (let [stroke (format "%sEXP%s" (fdnstr hyp) (fdnstr ev))]
+            (let [stroke (format "%s->%s" (fdnstr hyp) (fdnstr ev))]
               (-> fdn2
                   (forall-just [hyp] stroke)
                   (exists-just [stroke] ev))))
@@ -149,7 +210,7 @@
   which then links to each explananda."
   [fdn explanantia explananda]
   (reduce (fn [fdn2 ev]
-            (let [stroke (format "%sEXP%s" (str/join "AND" (map fdnstr explanantia)) (fdnstr ev))
+            (let [stroke (format "%s->%s" (str/join "&" (map fdnstr explanantia)) (fdnstr ev))
                   fdn-hyps-stroke (forall-just fdn2 explanantia stroke)]
               (exists-just fdn-hyps-stroke [stroke] ev)))
           fdn explananda))
