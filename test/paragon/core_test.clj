@@ -81,63 +81,75 @@
     #_(visualize fdn-abduced)
     #_(println (convert-to-prolog fdn-abduced))))
 
-(deftest test-peyer
-  (let [fdn (-> (new-fdn)
-               (add-initial :I1 :G1 :G6 :G4 :G5 :I2 :G3 :I3 :G1 :I4 :I4a :G2 :I5
-                        :I6 :G7 :I7 :G8 :I8)
-               (can-explain [:I1] [:E1])
-               (can-explain [:G1] [:E1])
-               (can-explain [:G6] [:E2])
-               (can-explain [:G4] [:E3])
-               (can-explain [:G5] [:E4])
-               (can-explain [:I2] [:E4])
-               (can-explain [:I2] [:E5])
-               (can-explain [:G3] [:E6])
-               (can-explain [:I3] [:E6])
-               (can-explain [:G1] [:E7])
-               (can-explain [:I4] [:E7])
-               (can-explain [:I4a] [:E8])
-               (can-explain [:G2] [:E9])
-               (can-explain [:I5] [:E9])
-               (can-explain [:G1] [:E10])
-               (can-explain [:I6] [:E10])
-               (can-explain [:I6] [:E11])
-               (can-explain [:G7] [:E12])
-               (can-explain [:I7] [:E12])
-               (can-explain [:G8] [:E13])
-               (can-explain [:I7] [:E13])
-               (can-explain [:G1] [:E14])
-               (can-explain [:I1] [:E14])
-               (can-explain [:I1] [:E16])
-               (can-explain [:I8] [:E17])
-               (add-inconsistencies [:G1 :I1] [:G1 :I8] [:I1 :I8]
-                                    [:G2 :I5] [:G3 :I3] [:G5 :I2] [:G7 :I7]))
-        ;; _ (turn-on-debugging)
-        ;; _ (println "****************")
-        fdn-abduced (abduce fdn [:E1 :E2 :E3 :E4 :E5 :E6 :E7
-                                 :E8 :E9 :E10 :E11 :E12 :E13
-                                 :E14 :E16 :E17])
-        ;; _ (turn-off-debugging)
-        ;; _ (println "****************")
-        fdn-contract-e16 (contract fdn-abduced [:E16])
-        fdn-contract-e16-e17 (contract fdn-contract-e16 [:E17])
-        fdn-contract-i4 (contract fdn-abduced [:I4])
-        fdn-contract-i1-i4 (contract fdn-contract-i4 [:I1])]
-    (visualize fdn)
-    (is (check-structure-axioms fdn-abduced))
-    (visualize fdn-abduced)
-    (is (check-color-axioms fdn-abduced))
+(def test-peyer-fdn
+  (-> (new-fdn)
+      (add-initial :I1 :G1 :G6 :G4 :G5 :I2 :G3 :I3 :G1 :I4 :I4a :G2 :I5
+                   :I6 :G7 :I7 :G8 :I8)
+      (can-explain [:I1] [:E1])
+      (can-explain [:G1] [:E1])
+      (can-explain [:G6] [:E2])
+      (can-explain [:G4] [:E3])
+      (can-explain [:G5] [:E4])
+      (can-explain [:I2] [:E4])
+      (can-explain [:I2] [:E5])
+      (can-explain [:G3] [:E6])
+      (can-explain [:I3] [:E6])
+      (can-explain [:G1] [:E7])
+      (can-explain [:I4] [:E7])
+      (can-explain [:I4a] [:E8])
+      (can-explain [:G2] [:E9])
+      (can-explain [:I5] [:E9])
+      (can-explain [:G1] [:E10])
+      (can-explain [:I6] [:E10])
+      (can-explain [:I6] [:E11])
+      (can-explain [:G7] [:E12])
+      (can-explain [:I7] [:E12])
+      (can-explain [:G8] [:E13])
+      (can-explain [:I7] [:E13])
+      (can-explain [:G1] [:E14])
+      (can-explain [:I1] [:E14])
+      (can-explain [:I1] [:E16])
+      (can-explain [:I8] [:E17])
+      (add-inconsistencies [:G1 :I1] [:G1 :I8] [:I1 :I8]
+                           [:G2 :I5] [:G3 :I3] [:G5 :I2] [:G7 :I7])))
+
+(deftest test-peyer-evidence
+  (let [fdn-evidence (with-debugging (abduce test-peyer-fdn
+                                             [:E1 :E2 :E3 :E4 :E5 :E6 :E7
+                                              :E8 :E9 :E10 :E11 :E12 :E13
+                                              :E14 :E16 :E17]))]
+    #_(visualize fdn-evidence)
+    (is (= true (check-structure-axioms fdn-evidence)))
+    (is (= true (check-color-axioms fdn-evidence)))
     (is (= #{:E17 :E5 :E10 :E11 :E12 :E13 :E7 :E2 :E3 :E4 :E6 :E8 :E9
              :G2 :G3 :G4 :G6 :G7 :G8 :I8 :I2 :I4a :I6 :I4}
-           (set (believed fdn-abduced))))
-    #_(visualize fdn-contract-e16)
-    (is (check-structure-axioms fdn-contract-e16))
-    (is (check-color-axioms fdn-contract-e16))    
-    (is (check-color-axioms fdn-contract-e16-e17))
-    (is (not (black? fdn-contract-e16 :E16)))
-    (is (not (black? fdn-contract-e16-e17 :E17)))
-    (is (not (black? fdn-contract-i4 :I4)))
-    (is (not (black? fdn-contract-i1-i4 :I1)))))
+           (set (believed fdn-evidence))))))
+
+(comment
+  (deftest test-peyer
+    (let [fdn 
+          ;; _ (turn-on-debugging)
+          ;; _ (println "****************")
+          fdn-abduced 
+          ;; _ (turn-off-debugging)
+          ;; _ (println "****************")
+          fdn-contract-e16 (contract fdn-abduced [:E16])
+          fdn-contract-e16-e17 (contract fdn-contract-e16 [:E17])
+          fdn-contract-i4 (contract fdn-abduced [:I4])
+          fdn-contract-i1-i4 (contract fdn-contract-i4 [:I1])]
+      #_(visualize fdn)
+      
+      (visualize fdn-contract-e16)
+      
+
+      #_(visualize fdn-contract-e16)
+      (is (= true (check-structure-axioms fdn-contract-e16)))
+      (is (= true (check-color-axioms fdn-contract-e16)))    
+      (is (= true (check-color-axioms fdn-contract-e16-e17)))
+      (is (not (black? fdn-contract-e16 :E16)))
+      (is (not (black? fdn-contract-e16-e17 :E17)))
+      (is (not (black? fdn-contract-i4 :I4)))
+      (is (not (black? fdn-contract-i1-i4 :I1))))))
 
 (deftest test-contraction-1
     (let [fdn (-> (new-fdn)

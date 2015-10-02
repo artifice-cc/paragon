@@ -77,6 +77,14 @@
 (defn check-axiom-coloration-1
   "Every black node receives an arrow from some black inference stroke."
   [fdn]
+  (when @debugging?
+    (let [failed (filter (comp not second)
+                         (map (fn [node] [node (or (white? fdn node)
+                                                   (some (fn [in] (and (stroke? fdn in) (black? fdn in)))
+                                                         (fdnin fdn node)))])
+                              (nodes fdn)))]
+      (when (not-empty failed)
+        (println "Failed axiom of coloration 1 (every black node receives an arrow from some black inference stroke):" (map first failed)))))
   (every? (fn [node] (or (white? fdn node)
                          (some (fn [in] (and (stroke? fdn in) (black? fdn in)))
                                (fdnin fdn node))))
@@ -85,6 +93,15 @@
 (defn check-axiom-coloration-2
   "Every white node receives arrows only from white inference strokes."
   [fdn]
+  (when @debugging?
+    (let [failed (filter (comp not second)
+                         (map (fn [node] [node (or (black? fdn node)
+                                                   (every? (fn [in] (and (stroke? fdn in)
+                                                                         (white? fdn in)))
+                                                           (fdnin fdn node)))])
+                              (nodes fdn)))]
+      (when (not-empty failed)
+        (println "Failed axiom of coloration 2 (every white node receives arrows only from white inference strokes):" (map first failed)))))
   (every? (fn [node] (or (black? fdn node)
                          (every? (fn [in] (and (stroke? fdn in)
                                                (white? fdn in)))
@@ -94,6 +111,15 @@
 (defn check-axiom-coloration-3
   "Every black inference stroke receives arrows (if any) only from black nodes."
   [fdn]
+  (when @debugging?
+    (let [failed (filter (comp not second)
+                         (map (fn [stroke] [stroke (or (white? fdn stroke)
+                                                       (empty? (fdnin fdn stroke))
+                                                       (every? (fn [n] (and (node? fdn n) (black? fdn n)))
+                                                               (fdnin fdn stroke)))])
+                              (strokes fdn)))]
+      (when (not-empty failed)
+        (println "Failed axiom of coloration 3 (every black inference stroke receives arrows (if any) only from black nodes):" (map first failed)))))
   (every? (fn [stroke] (or (white? fdn stroke)
                            (empty? (fdnin fdn stroke))
                            (every? (fn [n] (and (node? fdn n) (black? fdn n)))
@@ -103,6 +129,16 @@
 (defn check-axiom-coloration-4
   "Every white inference stroke that receives an arrow receives an arrow from some white node."
   [fdn]
+  (when @debugging?
+    (let [failed (filter (comp not second)
+                         (map (fn [stroke] [stroke (or (black? fdn stroke)
+                                                       (empty? (fdnin fdn stroke))
+                                                       (some (fn [in] (and (node? fdn in)
+                                                                           (white? fdn in)))
+                                                             (fdnin fdn stroke)))])
+                              (strokes fdn)))]
+      (when (not-empty failed)
+        (println "Failed axiom of coloration 4 (every white inference stroke that receives an arrow receives an arrow from some white node):" (map first failed)))))
   (every? (fn [stroke] (or (black? fdn stroke)
                            (empty? (fdnin fdn stroke))
                            (some (fn [in] (and (node? fdn in)

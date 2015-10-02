@@ -9,8 +9,8 @@
 
 (def debugging? (atom false))
 
-(defn turn-on-debugging [] (swap! debugging? (constantly true)))
-(defn turn-off-debugging [] (swap! debugging? (constantly false)))
+(defn turn-on-debugging [] #_(swap! debugging? (constantly true)))
+(defn turn-off-debugging [] #_(swap! debugging? (constantly false)))
 
 (defmacro with-debugging
   [& body]
