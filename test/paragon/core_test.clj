@@ -123,8 +123,9 @@
         fdn-contract-e16-e17 (contract fdn-contract-e16 [:E17])
         fdn-contract-i4 (contract fdn-abduced [:I4])
         fdn-contract-i1-i4 (contract fdn-contract-i4 [:I1])]
+    (visualize fdn)
     (is (check-structure-axioms fdn-abduced))
-    #_(visualize fdn-abduced)
+    (visualize fdn-abduced)
     (is (check-color-axioms fdn-abduced))
     (is (= #{:E17 :E5 :E10 :E11 :E12 :E13 :E7 :E2 :E3 :E4 :E6 :E8 :E9
              :G2 :G3 :G4 :G6 :G7 :G8 :I8 :I2 :I4a :I6 :I4}
@@ -266,83 +267,239 @@
     #_(visualize fdn-5)
     ))
 
-(deftest test-priority-example
-  (let [fdn (-> (new-fdn)
-                (add-initial :t :x :y)
-                (can-explain [:t] [:w :z])
-                (can-explain [:w] [:v])
-                (can-explain [:x :y] [:z])
-                (can-explain [:z] [:p]))
-        fdn-z (abduce fdn [:z])
-        fdn-z-negw (contract fdn-z [:w])
-        ;;        _ (println "*************")
-        ;;        _ (turn-on-debugging)
-        fdn-z-negw-negp (contract fdn-z-negw [:p])
-        ;;        _ (turn-off-debugging)
-        ;;        _ (println "*************")
-        fdn-z-negw-negx (contract fdn-z-negw [:x])
-        fdn-z-negw-w (abduce fdn-z-negw [:w])
-        fdn-z-negw-negx-w (abduce fdn-z-negw-negx [:w])
-        fdn-z-negw-negx-w-negp (contract fdn-z-negw-negx-w [:p])
-        fdn-t (abduce fdn [:t])
-        fdn-t-negt (contract fdn-t [:t])
-        fdn-xy (abduce fdn [:x :y])
-        fdn-xy-negxy (contract fdn-xy [:x :y])
-        fdn-xy-p (abduce fdn-xy [:p])
-        fdn-xy-p-negxy (contract fdn-xy-p [:x :y])
-        fdn-w (abduce fdn [:w])
-        fdn-w-negp (contract fdn-w [:p])
-        fdn-p (abduce fdn [:p])
-        fdn-p-negxy (contract fdn-p [:x :y])]
-    #_(visualize fdn-w)
-    #_(visualize fdn-w-negp)
+(def test-priority-fdn
+  (-> (new-fdn)
+      (add-initial :t :x :y)
+      (can-explain [:t] [:w :z])
+      (can-explain [:w] [:v])
+      (can-explain [:x :y] [:z])
+      (can-explain [:z] [:p])))
+
+(deftest test-priority-z
+  (let [fdn-z (abduce test-priority-fdn [:z])]
+    #_(visualize fdn-z)
+    (is (= #{:z :p :t :w :v} (set (believed fdn-z))))))
+
+(deftest test-priority-z-negw
+  (let [fdn-z (abduce test-priority-fdn [:z])
+        fdn-z-negw (with-debugging (contract fdn-z [:w]))]
     #_(visualize fdn-z-negw)
+    (is (= #{:z :p :x :y} (set (believed fdn-z-negw))))))
+
+(deftest test-priority-z-negw-negp
+  (let [fdn-z (abduce test-priority-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-negp (with-debugging (contract fdn-z-negw [:p]))]
     #_(visualize fdn-z-negw-negp)
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:y} (set (believed fdn-z-negw-negp))))))
+
+(deftest test-priority-z-negw-w
+  (let [fdn-z (abduce test-priority-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-w (with-debugging (abduce fdn-z-negw [:w]))]
+    #_(visualize fdn-z-negw-w)
+    (is (= #{:z :p :t :w :v :x :y} (set (believed fdn-z-negw-w))))))
+
+(deftest test-priority-z-negw-negx
+  (let [fdn-z (abduce test-priority-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-negx (with-debugging (contract fdn-z-negw [:x]))]
+    #_(visualize fdn-z-negw-negx)
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:y} (set (believed fdn-z-negw-negx))))))
+
+(deftest test-priority-z-negw-negx-w
+  (let [fdn-z (abduce test-priority-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-negx (contract fdn-z-negw [:x])
+        fdn-z-negw-negx-w (with-debugging (abduce fdn-z-negw-negx [:w]))]
+    #_(visualize fdn-z-negw-negx-w)
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:z :p :t :w :v :y} (set (believed fdn-z-negw-negx-w))))))
+
+(deftest test-priority-z-negw-negx-w-negp
+  (let [fdn-z (abduce test-priority-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-negx (contract fdn-z-negw [:x])
+        fdn-z-negw-negx-w (abduce fdn-z-negw-negx [:w])
+        fdn-z-negw-negx-w-negp (with-debugging (contract fdn-z-negw-negx-w [:p]))]
+    #_(visualize fdn-z-negw-negx-w-negp)
+    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
+    (is (= #{:y} (set (believed fdn-z-negw-negx-w-negp))))))
+
+(deftest test-priority-xy
+  (let [fdn-xy (with-debugging (abduce test-priority-fdn [:x :y]))]
+    #_(visualize fdn-xy)
+    (is (= #{:x :y :z :p} (set (believed fdn-xy))))))
+
+(deftest test-priority-xy-negxy
+  (let [fdn-xy (abduce test-priority-fdn [:x :y])
+        fdn-xy-negxy (with-debugging (contract fdn-xy [:x :y]))]
+    #_(visualize fdn-xy-negxy)
+    (is (= #{} (set (believed fdn-xy-negxy))))))
+
+(deftest test-priority-xy-p
+  (let [fdn-xy (abduce test-priority-fdn [:x :y])
+        fdn-xy-p (with-debugging (abduce fdn-xy [:p]))]
     #_(visualize fdn-xy-p)
+    (is (= #{:x :y :z :p} (set (believed fdn-xy-p))))))
+
+(deftest test-priority-xy-p-negxy
+  (let [fdn-xy (abduce test-priority-fdn [:x :y])
+        fdn-xy-p (abduce fdn-xy [:p])
+        fdn-xy-p-negxy (with-debugging (contract fdn-xy-p [:x :y]))]
     #_(visualize fdn-xy-p-negxy)
-    #_(visualize fdn-xy-p)
-    #_(visualize fdn-xy-p-negxy)
-    (is (= #{:z :p :t :w :v} (set (believed fdn-z))))
-    (is (= #{:z :p :x :y} (set (believed fdn-z-negw))))
-    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
-    (is (= #{:y} (set (believed fdn-z-negw-negp))))
-    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
-    (is (= #{:y} (set (believed fdn-z-negw-negx))))
-    (is (= #{:z :p :t :w :v :x :y} (set (believed fdn-z-negw-w))))
-    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
-    (is (= #{:z :p :t :w :v :y} (set (believed fdn-z-negw-negx-w))))
-    ;; leaving y behind is not desirable; but maybe epistemically appropriate?
-    (is (= #{:y} (set (believed fdn-z-negw-negx-w-negp))))
-    (is (= #{} (set (believed fdn-t-negt))))
-    (is (= #{:x :y :z :p} (set (believed fdn-xy))))
-    (is (= #{} (set (believed fdn-xy-negxy))))
-    (is (= #{:p :z :x :y} (set (believed fdn-xy-p))))
     (is (= #{:p :z :t :w :v} (set (believed fdn-xy-p-negxy))))))
 
-(deftest test-priority-example-inconsistencies
-  (let [fdn (-> (new-fdn)
-                (add-initial :t :x :y)
-                (can-explain [:t] [:w :z])
-                (can-explain [:w] [:v])
-                (can-explain [:x :y] [:z])
-                (can-explain [:z] [:p])
-                (add-inconsistencies [:t :x]))
-        fdn-z (abduce fdn [:z])
+(deftest test-priority-t
+  (let [fdn-t (with-debugging (abduce test-priority-fdn [:t]))]
+    #_(visualize fdn-t)
+    (is (= #{:t :w :v :z :p} (set (believed fdn-t))))))
+
+(deftest test-priority-t-negt
+  (let [fdn-t (abduce test-priority-fdn [:t])
+        fdn-t-negt (with-debugging (contract fdn-t [:t]))]
+    #_(visualize fdn-t-negt)
+    (is (= #{} (set (believed fdn-t-negt))))))
+
+(deftest test-priority-t-p
+  (let [fdn-t (abduce test-priority-fdn [:t])
+        fdn-t-p (with-debugging (abduce fdn-t [:p]))]
+    #_(visualize fdn-t-p)
+    (is (= #{:t :w :v :z :p} (set (believed fdn-t-p))))))
+
+(deftest test-priority-t-p-negt
+  (let [fdn-t (abduce test-priority-fdn [:t])
+        fdn-t-p (abduce fdn-t [:p])
+        fdn-t-p-negt (with-debugging (contract fdn-t-p [:t]))]
+    #_(visualize fdn-t-p-negt)
+    (is (= #{:x :y :z :p} (set (believed fdn-t-p-negt))))))
+
+(def test-skidding-fdn
+  (-> (new-fdn)
+      (add-initial :drunk)
+      (add-initial :speeding)
+      (can-explain [:drunk] [:pulled-brake])
+      (can-explain [:pulled-brake] [:locking :pulled-position :testimony])
+      (can-explain [:speeding] [:mark-nature :control-loss])
+      (can-explain [:control-loss] [:skidding])
+      (can-explain [:locking] [:skidding])
+      (can-explain [:skidding] [:tire-marks :crash])))
+
+(deftest test-skidding-crash
+  (let [fdn-crash (with-debugging (abduce test-skidding-fdn [:crash]))]
+    #_(visualize fdn-crash)
+    (is (= #{:speeding :mark-nature :control-loss :skidding :tire-marks :crash} (set (believed fdn-crash))))))
+
+(deftest test-skidding-crash-negspeeding
+  (let [fdn-crash (abduce test-skidding-fdn [:crash])
+        fdn-crash-negspeeding (with-debugging (contract fdn-crash [:speeding]))]
+    #_(visualize fdn-crash-negspeeding)
+    (is (= #{:drunk :pulled-brake :testimony :pulled-position :locking :skidding :tire-marks :crash}
+           (set (believed fdn-crash-negspeeding))))))
+
+(def test-grasswet-fdn
+  (-> (new-fdn)
+      (add-initial :rain)
+      (add-initial :sprinkler)
+      (can-explain [:rain] [:grass-wet])
+      (can-explain [:sprinkler] [:grass-wet])))
+
+(deftest test-grasswet-grasswet
+  (let [fdn-grasswet (with-debugging (abduce test-grasswet-fdn [:grass-wet]))]
+    #_(visualize fdn-grasswet)
+    (is (= #{:grass-wet :rain} (set (believed fdn-grasswet))))))
+
+(deftest test-grasswet-grasswet-negrain
+  (let [fdn-grasswet (abduce test-grasswet-fdn [:grass-wet])
+        fdn-grasswet-negrain (with-debugging (contract fdn-grasswet [:rain]))]
+    #_(visualize fdn-grasswet-negrain)
+    (is (= #{:grass-wet :sprinkler} (set (believed fdn-grasswet-negrain))))))
+
+(deftest test-grasswet-grasswet-negrain-negsprinkler
+  (let [fdn-grasswet (abduce test-grasswet-fdn [:grass-wet])
+        fdn-grasswet-negrain (contract fdn-grasswet [:rain])
+        fdn-grasswet-negrain-negsprinkler (with-debugging (contract fdn-grasswet-negrain [:sprinkler]))]
+    #_(visualize fdn-grasswet-negrain-negsprinkler)
+    (is (= #{} (set (believed fdn-grasswet-negrain-negsprinkler))))))
+
+(deftest test-grasswet-grasswet-negrain-negsprinkler-grasswet
+  (let [fdn-grasswet (abduce test-grasswet-fdn [:grass-wet])
+        fdn-grasswet-negrain (contract fdn-grasswet [:rain])
+        fdn-grasswet-negrain-negsprinkler (contract fdn-grasswet-negrain [:sprinkler])
+        fdn-grasswet-negrain-negsprinkler-grasswet (with-debugging (abduce fdn-grasswet-negrain-negsprinkler [:grass-wet]))]
+    #_(visualize fdn-grasswet-negrain-negsprinkler-grasswet)
+    (is (= #{:grass-wet :rain} (set (believed fdn-grasswet-negrain-negsprinkler-grasswet))))))
+
+(deftest test-grasswet-grasswet-negrain-negsprinkler-negrain
+  (let [fdn-grasswet (abduce test-grasswet-fdn [:grass-wet])
+        fdn-grasswet-negrain (contract fdn-grasswet [:rain])
+        fdn-grasswet-negrain-negsprinkler (contract fdn-grasswet-negrain [:sprinkler])
+        fdn-grasswet-negrain-negsprinkler-negrain (with-debugging (contract fdn-grasswet-negrain-negsprinkler [:rain]))]
+    #_(visualize fdn-grasswet-negrain-negsprinkler-negrain)
+    (is (= #{} (set (believed fdn-grasswet-negrain-negsprinkler-negrain))))))
+
+(deftest test-grasswet-grasswet-negrain-negsprinkler-negrain-grasswet
+  (let [fdn-grasswet (abduce test-grasswet-fdn [:grass-wet])
+        fdn-grasswet-negrain (contract fdn-grasswet [:rain])
+        fdn-grasswet-negrain-negsprinkler (contract fdn-grasswet-negrain [:sprinkler])
+        fdn-grasswet-negrain-negsprinkler-negrain (contract fdn-grasswet-negrain-negsprinkler [:rain])
+        fdn-grasswet-negrain-negsprinkler-negrain-grasswet (with-debugging (abduce fdn-grasswet-negrain-negsprinkler-negrain [:grass-wet]))]
+    #_(visualize fdn-grasswet-negrain-negsprinkler-negrain-grasswet)
+    ;; this case is not handled well; see notes about "cases not supported"
+    (is (= #{:grass-wet :rain} (set (believed fdn-grasswet-negrain-negsprinkler-negrain-grasswet))))))
+
+(def test-priority-inconsistency-fdn
+  (-> (new-fdn)
+      (add-initial :t :x :y)
+      (can-explain [:t] [:w :z])
+      (can-explain [:w] [:v])
+      (can-explain [:x :y] [:z])
+      (can-explain [:z] [:p])
+      (add-inconsistencies [:t :x])))
+
+(deftest test-priority-inconsistency-z
+  (let [fdn-z (with-debugging (abduce test-priority-inconsistency-fdn [:z]))]
+    #_(visualize fdn-z)
+    (is (= #{:z :p :t :w :v} (set (believed fdn-z))))))
+
+(deftest test-priority-inconsistency-z-negw
+  (let [fdn-z (abduce test-priority-inconsistency-fdn [:z])
+        fdn-z-negw (with-debugging (contract fdn-z [:w]))]
+    #_(visualize fdn-z-negw)
+    (is (= #{:z :p :x :y} (set (believed fdn-z-negw))))))
+
+(deftest test-priority-inconsistency-z-negw-t
+  (let [fdn-z (abduce test-priority-inconsistency-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-t (with-debugging (abduce fdn-z-negw [:t]))]
+    #_(visualize fdn-z-negw-t)
+    (is (= #{:z :p :t :w :v :y} (set (believed fdn-z-negw-t))))))
+
+(deftest test-priority-inconsistency-z-negw-t-negz
+  (let [fdn-z (abduce test-priority-inconsistency-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-t (abduce fdn-z-negw [:t])
+        fdn-z-negw-t-negz (with-debugging (contract fdn-z-negw-t [:z]))]
+    #_(visualize fdn-z-negw-t-negz)
+    (is (= #{:y} (set (believed fdn-z-negw-t-negz))))))
+
+(deftest test-priority-inconsistency-z-negw-t-negz-p
+  (let [fdn-z (abduce test-priority-inconsistency-fdn [:z])
+        fdn-z-negw (contract fdn-z [:w])
+        fdn-z-negw-t (abduce fdn-z-negw [:t])
+        fdn-z-negw-t-negz (contract fdn-z-negw-t [:z])
+        fdn-z-negw-t-negz-p (with-debugging (abduce fdn-z-negw-t-negz [:p]))]
+    #_(visualize fdn-z-negw-t-negz-p)
+    (is (= #{:p :z :x :y} (set (believed fdn-z-negw-t-negz-p))))))
+
+(deftest test-priority-inconsistency-z-negw-t-negz-p-negy
+  (let [fdn-z (abduce test-priority-inconsistency-fdn [:z])
         fdn-z-negw (contract fdn-z [:w])
         fdn-z-negw-t (abduce fdn-z-negw [:t])
         fdn-z-negw-t-negz (contract fdn-z-negw-t [:z])
         fdn-z-negw-t-negz-p (abduce fdn-z-negw-t-negz [:p])
-        ;; _ (println "*************")
-        ;; _ (turn-on-debugging)
-        fdn-z-negw-t-negz-p-negy (contract fdn-z-negw-t-negz-p [:y])
-        ;; _ (println "*************")
-        ;; _ (turn-off-debugging)
-        ]
-    #_(visualize fdn-z-negw-t-negz-p)
+        fdn-z-negw-t-negz-p-negy (with-debugging (contract fdn-z-negw-t-negz-p [:y]))]
     #_(visualize fdn-z-negw-t-negz-p-negy)
-    (is (= #{:z :p :t :w :v} (set (believed fdn-z))))
-    (is (= #{:z :p :x :y} (set (believed fdn-z-negw))))
-    (is (= #{:z :p :t :w :v :y} (set (believed fdn-z-negw-t))))
-    (is (= #{:y} (set (believed fdn-z-negw-t-negz))))
-    (is (= #{:p :z :x :y} (set (believed fdn-z-negw-t-negz-p))))
     (is (= #{:z :p :v :w :t} (set (believed fdn-z-negw-t-negz-p-negy))))))

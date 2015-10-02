@@ -1,4 +1,5 @@
 (ns paragon.core
+  (:require [clojure.set :as set])
   (:require [clojure.string :as str])
   (:require [loom.graph :as graph]))
 
@@ -10,6 +11,13 @@
 
 (defn turn-on-debugging [] (swap! debugging? (constantly true)))
 (defn turn-off-debugging [] (swap! debugging? (constantly false)))
+
+(defmacro with-debugging
+  [& body]
+  `(do (turn-on-debugging)
+       (let [result# (do ~@body)]
+         (turn-off-debugging)
+         result#)))
 
 ;;;;
 ;;;; PRIMITIVES / DATA STRUCTURES
@@ -83,51 +91,61 @@
   [fdn stroke-or-node]
   (graph/incoming (:graph fdn) stroke-or-node))
 
+(defn fdntags
+  [fdn node-or-stroke]
+  (get-in fdn [:tags node-or-stroke] []))
+
 (defn fdnpriority
-  [fdn stroke-or-node]
-  (if (node? fdn stroke-or-node)
-    ;; node
-    (if (= :bottom stroke-or-node)
-      ;; bottom has 'infinite' priority
-      Integer/MAX_VALUE
-      (get-in fdn [:priorities stroke-or-node] 0))
-    ;; stroke; find max of priorities of incoming nodes
-    (let [in (fdnin fdn stroke-or-node)]
-      ;; we don't have infinite recursion because only nodes point to strokes,
-      ;; and fdnpriority on a node has no recursive call
-      (if (empty? in)
-        0 ;; top strokes always have priority 0
-        (apply max (map #(fdnpriority fdn %) in))))))
+  [fdn node-or-stroke]
+  (if (= :bottom node-or-stroke)
+    ;; bottom has max priority
+    Integer/MAX_VALUE
+    (:priority (last (fdntags fdn node-or-stroke)) 0)))
 
-(defn update-priority
-  [fdn node]
-  (assert (node? fdn node))
-  (assoc-in fdn [:priorities node] (inc (fdnpriority fdn node))))
+(defn collapse-tags
+  "black/white pairs for the same node are eliminated"
+  [tags]
+  (let [node-groups (group-by :node tags)]
+    (vec (sort-by :priority
+                  (filter identity
+                          (for [[node tags] node-groups]
+                            (let [color-groups (group-by :color tags)]
+                              (cond (> (count (:black color-groups)) (count (:white color-groups)))
+                                    (last (sort-by :priority (:black color-groups)))
+                                    (< (count (:black color-groups)) (count (:white color-groups)))
+                                    (last (sort-by :priority (:white color-groups)))
+                                    :else
+                                    nil))))))))
 
-(defn observed-priority
-  [fdn stroke-or-node]
-  (if (node? fdn stroke-or-node)
-    ;; node
-    (if (= :bottom stroke-or-node)
-      ;; bottom has 'infinite' priority
-      Integer/MAX_VALUE
-      (get-in fdn [:observed stroke-or-node] 0))
-    ;; stroke; find max of priorities of incoming nodes
-    (let [in (fdnin fdn stroke-or-node)]
-      ;; we don't have infinite recursion because only nodes point to strokes,
-      ;; and fdnpriority on a node has no recursive call
-      (if (empty? in)
-        0 ;; top strokes always have priority 0
-        (apply max (map #(observed-priority fdn %) in))))))
+(defn append-tag
+  [fdn node-or-stroke tag]
+  (let [ts (fdntags fdn node-or-stroke)]
+    (assoc-in fdn [:tags node-or-stroke] (conj ts tag))))
 
-(defn observe
-  [fdn node]
-  (assert (node? fdn node))
-  (assoc-in fdn [:observed node] (:priority-counter fdn)))
+(defn merge-tags
+  [fdn node-or-stroke other-nodes-or-strokes]
+  (let [all-tags (map #(set (get-in fdn [:tags %] [])) (conj other-nodes-or-strokes node-or-stroke))
+        set-tags (apply set/union all-tags)]
+    (vec (sort-by :priority set-tags))))
+
+(defn save-merged-tags
+  "result is saved into node-or-stroke"
+  [fdn node-or-stroke other-nodes-or-strokes]
+  (assoc-in fdn [:tags node-or-stroke] (merge-tags fdn node-or-stroke other-nodes-or-strokes)))
+
+(defn gen-observe-tag
+  [fdn node color] ;; color is :black or :white
+  {:type :observe :node node :color color :priority (get fdn :priority-counter)})
 
 (defn inc-priority-counter
   [fdn]
   (update-in fdn [:priority-counter] inc))
+
+(defn is-nondeterministic?
+  [fdn node-or-stroke]
+  ;; abduction nondeterminism: multiple incoming strokes
+  ;; contraction nondeterminism: multiple incoming nodes
+  (> (count (fdnin fdn node-or-stroke)) 1))
 
 (defn degree
   [fdn stroke-or-node]
@@ -229,7 +247,7 @@
   Usage example: (add-inconsistencies fdn [:node1 :node2 :node3] [:node2 :node3] ...)"
   [fdn & nodesets]
   (reduce (fn [fdn2 nodes]
-            (let [botstroke (format "bot_%s" (str/join "-" (map fdnstr nodes)))]
+            (let [botstroke (format "bot_%s" (str/join "&" (map fdnstr nodes)))]
               (-> fdn2
                   (forall-just nodes botstroke)
                   (exists-just [botstroke] :bottom))))

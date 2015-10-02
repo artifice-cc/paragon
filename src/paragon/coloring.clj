@@ -6,24 +6,31 @@
 
 (defn assert-color
   [fdn stroke-or-node color]
-  (when @debugging? (println "asserting" stroke-or-node "as" color))
-  (let [fdn-colored (assoc-in fdn [:coloring stroke-or-node] color)]
-    (if (node? fdn-colored stroke-or-node)
-      (update-priority fdn-colored stroke-or-node)
-      fdn-colored)))
+  (when @debugging?
+    (println "asserting" stroke-or-node "as" color))
+  (assoc-in fdn [:coloring stroke-or-node] color))
 
 (defn assert-black
   [fdn stroke-or-node]
-  (assert-color fdn stroke-or-node :black))
+  (let [fdn-colored (assert-color fdn stroke-or-node :black)
+        black-adjacent (filter #(black? fdn-colored %)
+                               (concat (fdnin fdn-colored stroke-or-node)
+                                       (fdnout fdn-colored stroke-or-node)))]
+    (save-merged-tags fdn-colored stroke-or-node black-adjacent)))
 
 (defn assert-black-initial
   [fdn node]
-  (-> fdn (assert-black node) (assert-black (format ".%s" (fdnstr node)))))
+  (-> fdn
+      (assert-black node)
+      (assert-black (format ".%s" (fdnstr node)))))
 
 (defn assert-white
   [fdn stroke-or-node]
-  (assert-color fdn stroke-or-node :white))
-
+  (let [fdn-colored (assert-color fdn stroke-or-node :white)
+        white-adjacent (filter #(white? fdn-colored %)
+                               (concat (fdnin fdn-colored stroke-or-node)
+                                       (fdnout fdn-colored stroke-or-node)))]
+    (save-merged-tags fdn-colored stroke-or-node white-adjacent)))
 
 (defn white-bad-strokes
   "Bad stroke w.r.t. white: A stroke (#i) is black but points a white
@@ -31,18 +38,11 @@
   node (#i) points to it, and j <= i."
   [fdn]
   (filter (fn [s]
-            (let [spriority (fdnpriority fdn s)
-                  obspriority (observed-priority fdn s)
-                  n (first (fdnout fdn s)) ;; this stroke's out node
-                  npriority (fdnpriority fdn n)]
+            ;; n is this stroke's single out node
+            (let [n (first (fdnout fdn s))]
               (and (black? fdn s)
-                   (or (and (white? fdn n)
-                            (or (< spriority npriority)
-                                (<= obspriority (observed-priority fdn n))))
-                       (some (fn [n2] (and (white? fdn n2)
-                                           (or (<= spriority (fdnpriority fdn n2))
-                                               (<= obspriority (observed-priority fdn n2)))))
-                             (fdnin fdn s))))))
+                   (or (white? fdn n)
+                       (some (fn [n2] (white? fdn n2)) (fdnin fdn s))))))
           (strokes fdn)))
 
 (defn white-bad-nodes-deterministic
@@ -52,19 +52,25 @@
   of its incoming strokes are white and all strokes have priority (#i)
   such that j <= i."
   [fdn]
-  #_(doseq [n (nodes fdn)]
-      (prn n (fdnpriority fdn n) (observed-priority fdn n)
-           (map (fn [s] [s (fdnpriority fdn s) (observed-priority fdn s)])
-                (fdnin fdn n))))
-  (filter (fn [n]
-            (let [npriority (fdnpriority fdn n)
-                  obnpriority (observed-priority fdn n)
-                  ins (fdnin fdn n)]
-              (and (black? fdn n)
-                   (every? (fn [s] (white? fdn s)) ins)
-                   (or (every? (fn [s] (< npriority (fdnpriority fdn s))) ins)
-                       (every? (fn [s] (<= obnpriority (observed-priority fdn s))) ins)))))
-          (nodes fdn)))
+  (doall (filter (fn [n]
+                   (let [ins (fdnin fdn n)
+                         tags (collapse-tags (merge-tags fdn n (concat (fdnin fdn n) (fdnout fdn n))))
+                         priority (fdnpriority fdn n)
+                         min-in-priority (apply min (map (partial fdnpriority fdn) ins))
+                         bad? (and (black? fdn n)
+                                   (every? (fn [s] (white? fdn s)) ins)
+                                   (or (and (< priority min-in-priority)
+                                            ;; latest priority tag is a :white tag; or, no tags
+                                            (or (= :white (:color (last tags)))
+                                                (empty? tags)))
+                                       (every? (fn [ts] (some (fn [t] (and (= n (:node t)) (= :black (:color t)))) ts))
+                                               (mapcat #(fdntags fdn %) (fdnin fdn n)))
+                                       (empty? tags)))]
+                     (when @debugging?
+                       (println (format "spread-white: Considering node %s (priority %d, min-in-priority %d); bad node? %s; tags: %s"
+                                        n priority min-in-priority (if bad? "yes" "no") (clojure.string/join ", " (map pr-str tags)))))
+                     bad?))
+                 (nodes fdn))))
 
 (defn white-bad-nodes-nondeterministic
   "Bad node w.r.t. white (non-deterministic): A node (#i) is black but
@@ -72,12 +78,10 @@
   it, and j >= i. One of these black nodes must turn white."
   [fdn]
   (filter (fn [n]
-            (let [npriority (fdnpriority fdn n)]
-              (and (black? fdn n)
-                   (some (fn [s] (and (white? fdn s)
-                                      (<= npriority (fdnpriority fdn s))
-                                      (every? (fn [n2] (black? fdn n2)) (fdnin fdn s))))
-                         (fdnout fdn n)))))
+            (and (black? fdn n)
+                 (some (fn [s] (and (white? fdn s)
+                                    (every? (fn [n2] (black? fdn n2)) (fdnin fdn s))))
+                       (fdnout fdn n))))
           (nodes fdn)))
 
 (defn spread-white
@@ -115,13 +119,11 @@
   that j <= i."
   [fdn]
   (filter (fn [s]
-            (let [spriority (fdnpriority fdn s)
-                  ns (fdnin fdn s)]
+            (let [ns (fdnin fdn s)]
               (and (white? fdn s)
+                   (not (re-matches #"bot_.*" (fdnstr s)))
                    (and (not-empty ns)
-                        (every? (fn [n] (and (black? fdn n)
-                                             (<= spriority (fdnpriority fdn n))))
-                                ns)))))
+                        (every? (fn [n] (black? fdn n)) ns)))))
           (strokes fdn)))
 
 (defn abduce-bad-strokes-nondeterministic
@@ -129,18 +131,26 @@
   white but points to a black node (#j) that has only white strokes
   pointing to it, and j >= i."
   [fdn]
-  (filter (fn [s]
-            (let [spriority (fdnpriority fdn s)
-                  obspriority (observed-priority fdn s)
-                  n (first (fdnout fdn s))
-                  npriority (fdnpriority fdn n)]
-              (and (white? fdn s)
-                   (black? fdn n)
-                   (or (< spriority npriority)
-                       (<= obspriority (observed-priority fdn n)))
-                   (every? (fn [s2] (white? fdn s2))
-                           (fdnin fdn n)))))
-          (strokes fdn)))
+  (doall (filter (fn [s]
+                   ;; n is this stroke's single out node
+                   (let [n (first (fdnout fdn s))
+                         tags (collapse-tags (merge-tags fdn s [n]))
+                         priority (fdnpriority fdn s)
+                         out-priority (fdnpriority fdn n)
+                         bad? (and (white? fdn s)
+                                   (black? fdn n)
+                                   (every? (fn [s2] (white? fdn s2)) (fdnin fdn n))
+                                   (or (< priority out-priority)
+                                       ;; only a single stroke (the one in question) points to this node
+                                       (= 1 (count (fdnin fdn n)))
+                                       (empty? tags)))]
+                     (when @debugging?
+                       (println (format "spread-abduce: Considering stroke %s (priority %d, out-priority %d); bad stroke? %s; these tags: %s; all tags: %s"
+                                        s priority out-priority (if bad? "yes" "no")
+                                        (clojure.string/join ", " (map pr-str (fdntags fdn s)))
+                                        (clojure.string/join ", " (map pr-str tags)))))
+                     bad?))
+                 (strokes fdn))))
 
 (defn abduce-bad-nodes
   "Bad node w.r.t. abduction: A node (#i) is white but is pointed to
@@ -148,14 +158,12 @@
   i."
   [fdn]
   (filter (fn [n]
-            (let [npriority (fdnpriority fdn n)]
-              (and (white? fdn n)
-                   (or (some (fn [s] (and (black? fdn s)
-                                          (>= (fdnpriority fdn s) npriority)))
-                             (fdnin fdn n))
-                       (some (fn [s] (and (black? fdn s)
-                                          (>= (fdnpriority fdn s) npriority)))
-                             (fdnout fdn n))))))
+            (and (not= :bottom n)
+                 (white? fdn n)
+                 (or (some (fn [s] (black? fdn s))
+                           (fdnin fdn n))
+                     (some (fn [s] (black? fdn s))
+                           (fdnout fdn n)))))
           (nodes fdn)))
 
 (defn spread-abduce
@@ -180,7 +188,8 @@
           (recur (reduce assert-black fdn (concat @bad-strokes-deterministic @bad-nodes)))
           ;; if we have a non-deterministic bad stroke, employ the strategy
           (not-empty @bad-strokes-nondeterministic)
-          (recur (assert-black fdn (abduce-strategy fdn @bad-strokes-nondeterministic)))
+          (let [choice (abduce-strategy fdn @bad-strokes-nondeterministic)]
+            (recur (assert-black fdn choice)))
           :else
           (do (when @debugging? (println "Axioms failed in spread-abduce.\n\n"))
               fdn))))))
@@ -191,12 +200,10 @@
   that j >= i."
   [fdn]
   (filter (fn [s]
-            (let [spriority (fdnpriority fdn s)
-                  ns (fdnin fdn s)]
+            (let [ns (fdnin fdn s)]
               (and (white? fdn s)
                    (and (not-empty ns)
-                        (every? (fn [n] (black? fdn n)) ns)
-                        (some (fn [n] (>= (fdnpriority fdn n) spriority)) ns)))))
+                        (every? (fn [n] (black? fdn n)) ns)))))
           (strokes fdn)))
 
 (defn black-bad-nodes
@@ -204,11 +211,8 @@
   black stroke (#j), and j >= i."
   [fdn]
   (filter (fn [n]
-            (let [npriority (fdnpriority fdn n)]
-              (and (white? fdn n)
-                   (some (fn [s] (and (black? fdn s)
-                                      (>= (fdnpriority fdn s) npriority)))
-                         (fdnin fdn n)))))
+            (and (white? fdn n)
+                 (some (fn [s] (black? fdn s)) (fdnin fdn n))))
           (nodes fdn)))
 
 (defn spread-black
@@ -262,8 +266,9 @@
   (let [fdn-priority (if inc-priorities?
                        (inc-priority-counter fdn)
                        fdn)
-        fdn-observed (reduce observe fdn-priority nodes)
-        fdn-asserted (reduce assert-white fdn-observed nodes)
+        fdn-tagged (reduce (fn [fdn2 n] (append-tag fdn2 n (gen-observe-tag fdn2 n :white)))
+                           fdn-priority nodes)
+        fdn-asserted (reduce assert-white fdn-tagged nodes)
         fdn-whitened (spread-white fdn-asserted white-strategy)]
     (cond (check-color-axioms fdn-whitened)
           fdn-whitened
@@ -305,9 +310,10 @@
   (let [fdn-priority (if inc-priorities?
                        (inc-priority-counter fdn)
                        fdn)
-        fdn-observed (reduce observe fdn-priority nodes)
-        fdn-asserted-non-initial (reduce assert-black fdn-observed
-                                         (filter #(not (initial? fdn-observed %)) nodes))
+        fdn-tagged (reduce (fn [fdn2 n] (append-tag fdn2 n (gen-observe-tag fdn2 n :black)))
+                           fdn-priority nodes)
+        fdn-asserted-non-initial (reduce assert-black fdn-tagged
+                                         (filter #(not (initial? fdn-tagged %)) nodes))
         fdn-asserted-initial (reduce assert-black-initial fdn-asserted-non-initial
                                      (filter #(initial? fdn-asserted-non-initial %) nodes))
         fdn-blackened (spread-abduce fdn-asserted-initial abduce-strategy)]
