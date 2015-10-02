@@ -84,7 +84,7 @@
                                                          (fdnin fdn node)))])
                               (nodes fdn)))]
       (when (not-empty failed)
-        (println "Failed axiom of coloration 1 (every black node receives an arrow from some black inference stroke):" (map first failed)))))
+        (warning "Fails Axiom of Coloration 1 (every black node receives an arrow from some black inference stroke):" (map first failed)))))
   (every? (fn [node] (or (white? fdn node)
                          (some (fn [in] (and (stroke? fdn in) (black? fdn in)))
                                (fdnin fdn node))))
@@ -101,7 +101,7 @@
                                                            (fdnin fdn node)))])
                               (nodes fdn)))]
       (when (not-empty failed)
-        (println "Failed axiom of coloration 2 (every white node receives arrows only from white inference strokes):" (map first failed)))))
+        (warning "Fails Axiom of Coloration 2 (every white node receives arrows only from white inference strokes):" (map first failed)))))
   (every? (fn [node] (or (black? fdn node)
                          (every? (fn [in] (and (stroke? fdn in)
                                                (white? fdn in)))
@@ -119,7 +119,7 @@
                                                                (fdnin fdn stroke)))])
                               (strokes fdn)))]
       (when (not-empty failed)
-        (println "Failed axiom of coloration 3 (every black inference stroke receives arrows (if any) only from black nodes):" (map first failed)))))
+        (warning "Fails Axiom of Coloration 3 (every black inference stroke receives arrows (if any) only from black nodes):" (map first failed)))))
   (every? (fn [stroke] (or (white? fdn stroke)
                            (empty? (fdnin fdn stroke))
                            (every? (fn [n] (and (node? fdn n) (black? fdn n)))
@@ -138,7 +138,7 @@
                                                              (fdnin fdn stroke)))])
                               (strokes fdn)))]
       (when (not-empty failed)
-        (println "Failed axiom of coloration 4 (every white inference stroke that receives an arrow receives an arrow from some white node):" (map first failed)))))
+        (warning "Fails Axiom of Coloration 4 (every white inference stroke that receives an arrow receives an arrow from some white node):" (map first failed)))))
   (every? (fn [stroke] (or (black? fdn stroke)
                            (empty? (fdnin fdn stroke))
                            (some (fn [in] (and (node? fdn in)
@@ -153,23 +153,23 @@
 
 (defn check-structure-axioms-debug
   [fdn]
-  (and (or (check-axiom-neg1 fdn) (println "Fails Axiom -1."))
-       (or (check-axiom-0 fdn) (println "Fails Axiom 0."))
-       (or (check-axiom-1 fdn) (println "Fails Axiom 1."))
-       (or (check-axiom-2 fdn) (println "Fails Axiom 2."))
-       (or (check-axiom-3-and-4 fdn) (println "Fails Axioms 3/4."))
-       (or (check-axiom-5 fdn) (println "Fails Axiom 5."))
-       (or (check-axiom-6 fdn) (println "Fails Axiom 6."))
-       (or (check-axiom-7 fdn) (println "Fails Axiom 7."))
-       (or (check-axiom-8 fdn) (println "Fails Axiom 8."))))
+  (and (or (check-axiom-neg1 fdn) (warning "Fails Axiom -1."))
+       (or (check-axiom-0 fdn) (warning "Fails Axiom 0."))
+       (or (check-axiom-1 fdn) (warning "Fails Axiom 1."))
+       (or (check-axiom-2 fdn) (warning "Fails Axiom 2."))
+       (or (check-axiom-3-and-4 fdn) (warning "Fails Axioms 3/4."))
+       (or (check-axiom-5 fdn) (warning "Fails Axiom 5."))
+       (or (check-axiom-6 fdn) (warning "Fails Axiom 6."))
+       (or (check-axiom-7 fdn) (warning "Fails Axiom 7."))
+       (or (check-axiom-8 fdn) (warning "Fails Axiom 8."))))
 
 (defn check-color-axioms-debug
   [fdn]
-  (and (or (check-axiom-coloration-1 fdn) (println "Fails Axiom of Coloration 1."))
-       (or (check-axiom-coloration-2 fdn) (println "Fails Axiom of Coloration 2."))
-       (or (check-axiom-coloration-3 fdn) (println "Fails Axiom of Coloration 3."))
-       (or (check-axiom-coloration-4 fdn) (println "Fails Axiom of Coloration 4."))
-       (or (check-axiom-coloration-bottom fdn) (println "Fails Axiom of Coloration Bottom."))))
+  (and (or (check-axiom-coloration-1 fdn) (warning "Fails Axiom of Coloration 1."))
+       (or (check-axiom-coloration-2 fdn) (warning "Fails Axiom of Coloration 2."))
+       (or (check-axiom-coloration-3 fdn) (warning "Fails Axiom of Coloration 3."))
+       (or (check-axiom-coloration-4 fdn) (warning "Fails Axiom of Coloration 4."))
+       (or (check-axiom-coloration-bottom fdn) (warning "Fails Axiom of Coloration Bottom."))))
 
 (defn check-structure-axioms
   [fdn]

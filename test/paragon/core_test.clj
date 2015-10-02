@@ -487,6 +487,14 @@
         fdn-z-negw (contract fdn-z [:w])
         fdn-z-negw-t (with-debugging (abduce fdn-z-negw [:t]))]
     #_(visualize fdn-z-negw-t)
+    ;; it is acceptable (but not an ideal preference in contract-strategy)
+    ;; to actually not arrive with t abduced, since doing so requires
+    ;; that x is contracted, and there is no real reason to take
+    ;; back x rather than t (except that x was abduced and t is
+    ;; observed, but again, that's a preference issue; still, technically,
+    ;; after t is colored black, cannot have both x and t, so both
+    ;; are candidates for removal); default contract-strategy prefers
+    ;; to contract lowest priority, which will contract x not t
     (is (= #{:z :p :t :w :v :y} (set (believed fdn-z-negw-t))))))
 
 (deftest test-priority-inconsistency-z-negw-t-negz
@@ -512,6 +520,9 @@
         fdn-z-negw-t (abduce fdn-z-negw [:t])
         fdn-z-negw-t-negz (contract fdn-z-negw-t [:z])
         fdn-z-negw-t-negz-p (abduce fdn-z-negw-t-negz [:p])
-        fdn-z-negw-t-negz-p-negy (with-debugging (contract fdn-z-negw-t-negz-p [:y]))]
+        ;;_ (turn-on-debugging)
+        fdn-z-negw-t-negz-p-negy (with-debugging (contract fdn-z-negw-t-negz-p [:y]))
+        ;;_ (turn-off-debugging)
+        ]
     #_(visualize fdn-z-negw-t-negz-p-negy)
     (is (= #{:z :p :v :w :t} (set (believed fdn-z-negw-t-negz-p-negy))))))

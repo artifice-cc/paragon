@@ -1,7 +1,8 @@
 (ns paragon.core
   (:require [clojure.set :as set])
   (:require [clojure.string :as str])
-  (:require [loom.graph :as graph]))
+  (:require [loom.graph :as graph])
+  (:require [jansi-clj.core :as jansi]))
 
 ;;;;
 ;;;; DEBUGGING
@@ -9,15 +10,44 @@
 
 (def debugging? (atom false))
 
-(defn turn-on-debugging [] #_(swap! debugging? (constantly true)))
-(defn turn-off-debugging [] #_(swap! debugging? (constantly false)))
+(defn turn-on-debugging [] (swap! debugging? (constantly true)))
+(defn turn-off-debugging [] (swap! debugging? (constantly false)))
 
 (defmacro with-debugging
   [& body]
-  `(do (turn-on-debugging)
+  `(do #_(turn-on-debugging)
        (let [result# (do ~@body)]
-         (turn-off-debugging)
+         #_(turn-off-debugging)
          result#)))
+
+(defn print-msg
+  [msgs color]
+  (when @debugging?
+    (println (color (str/join " " (map (fn [m] (if (sequential? m) (str/join ", " (map str m)) (str m))) msgs))))))
+
+(defn info
+  [& msgs]
+  (print-msg msgs jansi/yellow))
+
+(defn trace
+  [& msgs]
+  (print-msg msgs jansi/cyan))
+
+(defn status
+  [& msgs]
+  (print-msg msgs jansi/blue))
+
+(defn success
+  [& msgs]
+  (print-msg msgs jansi/green))
+
+(defn warning
+  [& msgs]
+  (print-msg msgs jansi/red))
+
+(defn error
+  [& msgs]
+  (print-msg msgs (comp jansi/bold jansi/red)))
 
 ;;;;
 ;;;; PRIMITIVES / DATA STRUCTURES

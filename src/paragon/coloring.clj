@@ -7,8 +7,7 @@
 
 (defn assert-color
   [fdn stroke-or-node color]
-  (when @debugging?
-    (println "asserting" stroke-or-node "as" color))
+  (info "asserting" stroke-or-node "as" color)
   (assoc-in fdn [:coloring stroke-or-node] color))
 
 (defn assert-black
@@ -55,25 +54,36 @@
   [fdn]
   (doall (filter (fn [n]
                    (let [ins (fdnin fdn n)
-                         tags (collapse-tags (merge-tags fdn n (concat (fdnin fdn n) (fdnout fdn n))))
+                         all-tags (merge-tags fdn n (concat (fdnin fdn n) (fdnout fdn n)))
+                         tags (collapse-tags all-tags)
                          priority (fdnpriority fdn n)
                          min-in-priority (apply min (map (partial fdnpriority fdn) ins))
                          bad? (and (black? fdn n)
                                    (every? (fn [s] (white? fdn s)) ins)
                                    (or (and (<= priority min-in-priority)
-                                            ;; latest priority tag is a :white tag; or, no tags
-                                            (or (= :white (:color (last tags)))
-                                                (empty? tags)
-                                                (not-any? (fn [{:keys [color]}] (= :black color))
-                                                          (set/difference (set (fdntags fdn n)) (set tags)))))
-                                       (every? (fn [ts] (some (fn [t] (and (= n (:node t)) (= :black (:color t)))) ts))
+                                            #_(or (= :white (:color (last tags)))
+                                                #_(empty? tags)
+                                                #_(not-any? (fn [{:keys [color]}] (= :black color))
+                                                          (set/difference (set (fdntags fdn n)) (set tags)))
+                                                (not-any? (fn [{:keys [node color]}] (and (= n node) (= :black color)))
+                                                          (fdntags fdn n))))
+                                       #_(every? (fn [ts] (some (fn [t] (and (= n (:node t))
+                                                                           (= :black (:color t)))) ts))
                                                (mapcat #(fdntags fdn %) (fdnin fdn n)))
-                                       (empty? tags)))]
-                     (when @debugging?
-                       (println (format "spread-white: Considering node %s (priority %d, min-in-priority %d); bad node? %s; tags: %s; this tags: %s"
-                                        n priority min-in-priority (if bad? "yes" "no")
-                                        (clojure.string/join ", " (map pr-str tags))
-                                        (clojure.string/join ", " (map pr-str (fdntags fdn n))))))
+                                       #_(every? (fn [ts] (some (fn [t] (and (= n (:node t))
+                                                                             (= :black (:color t)))) ts))
+                                                 (mapcat #(fdntags fdn %) (fdnin fdn n)))
+                                       #_(empty? tags)
+                                       #_(and (< priority min-in-priority)
+                                            (= :white (:color (last tags))))))]
+                     (when (black? fdn n)
+                       (trace
+                        (format "spread-white: Considering node %s (priority %d, min-in-priority %d); bad node? %s\n\tthis tags: %s\n\tall tags: %s\n\tdiff tags: %s\n\tcollapsed tags: %s\n"
+                                n priority min-in-priority (if bad? "yes" "no")
+                                (clojure.string/join ", " (map pr-str (fdntags fdn n)))
+                                (clojure.string/join ", " (map pr-str all-tags))
+                                (clojure.string/join ", " (map pr-str (collapse-tags (set/difference (set (fdntags fdn n)) (set all-tags)))))
+                                (clojure.string/join ", " (map pr-str tags)))))
                      bad?))
                  (sort-by fdnstr (nodes fdn)))))
 
@@ -94,17 +104,16 @@
   (loop [fdn fdn]
     (if (check-color-axioms fdn)
       ;; nothing to do, everything checks out
-      (do (when @debugging? (println "\n+++ All axioms satisfied in spread-white.\n\n"))
+      (do (success "\n+++ All axioms satisfied in spread-white.\n\n")
           fdn)
       ;; something to do (inconsistent), spread white
       (let [bad-strokes (delay (white-bad-strokes fdn))
             bad-nodes-deterministic (delay (white-bad-nodes-deterministic fdn))
             bad-nodes-nondeterministic (delay (white-bad-nodes-nondeterministic fdn))]
-        (when @debugging?
-          (println "\n--- Spreading white.")
-          (println "Found bad strokes:" @bad-strokes)
-          (println "Found bad nodes (deterministic):" @bad-nodes-deterministic)
-          (println "Found bad nodes (non-deterministic):" @bad-nodes-nondeterministic))
+        (info "\n--- Spreading white.")
+        (info "Found bad strokes:" @bad-strokes)
+        (info "Found bad nodes (deterministic):" @bad-nodes-deterministic)
+        (info "Found bad nodes (non-deterministic):" @bad-nodes-nondeterministic)
         (cond
           ;; if we have bad strokes, just take care of them; no need for strategy
           ;; or, if we have deterministic bad nodes, just take care of them; no need for strategy
@@ -115,7 +124,7 @@
           (let [choice (white-strategy fdn @bad-nodes-nondeterministic)]
             (recur (assert-white fdn choice)))
           :else
-          (do (when @debugging? (println "\n!!! Axioms failed in spread-white."))
+          (do (error "\n!!! Axioms failed in spread-white.")
               fdn))))))
 
 (defn abduce-bad-strokes-deterministic
@@ -126,7 +135,6 @@
   (filter (fn [s]
             (let [ns (fdnin fdn s)]
               (and (white? fdn s)
-                   (not (re-matches #"bot_.*" (fdnstr s)))
                    (and (not-empty ns)
                         (every? (fn [n] (black? fdn n)) ns)))))
           (sort-by fdnstr (strokes fdn))))
@@ -145,15 +153,15 @@
                          bad? (and (white? fdn s)
                                    (black? fdn n)
                                    (every? (fn [s2] (white? fdn s2)) (fdnin fdn n))
-                                   (or (< priority out-priority)
+                                   (or (<= priority out-priority)
                                        ;; only a single stroke (the one in question) points to this node
-                                       (= 1 (count (fdnin fdn n)))
-                                       (empty? tags)))]
-                     (when @debugging?
-                       (println (format "spread-abduce: Considering stroke %s (priority %d, out-priority %d); bad stroke? %s; these tags: %s; all tags: %s"
-                                        s priority out-priority (if bad? "yes" "no")
-                                        (clojure.string/join ", " (map pr-str (fdntags fdn s)))
-                                        (clojure.string/join ", " (map pr-str tags)))))
+                                       #_(= 1 (count (fdnin fdn n)))
+                                       #_(empty? tags)))]
+                     (when (white? fdn s)
+                       (trace (format "spread-abduce: Considering stroke %s (priority %d, out-priority %d); bad stroke? %s\n\tthese tags: %s\n\tall tags: %s"
+                                      s priority out-priority (if bad? "yes" "no")
+                                      (clojure.string/join ", " (map pr-str (fdntags fdn s)))
+                                      (clojure.string/join ", " (map pr-str tags)))))
                      bad?))
                  (sort-by fdnstr (strokes fdn)))))
 
@@ -176,17 +184,17 @@
   (loop [fdn fdn]
     (if (check-color-axioms fdn)
       ;; nothing to do, everything checks out
-      (do (when @debugging? (println "\n+++ All axioms satisfied in spread-abduce.\n\n"))
+      (do (success "\n+++ All axioms satisfied in spread-abduce.\n\n")
           fdn)
       ;; something to do (inconsistent), spread abductively
       (let [bad-strokes-deterministic (delay (abduce-bad-strokes-deterministic fdn))
             bad-strokes-nondeterministic (delay (abduce-bad-strokes-nondeterministic fdn))
             bad-nodes (delay (abduce-bad-nodes fdn))]
         (when @debugging?
-          (println "\n--- Spreading abductively.")
-          (println "Found bad strokes (deterministic):" @bad-strokes-deterministic)
-          (println "Found bad strokes (non-deterministic):" @bad-strokes-nondeterministic)
-          (println "Found bad nodes:" @bad-nodes))
+          (info "\n--- Spreading abductively.")
+          (info "Found bad strokes (deterministic):" @bad-strokes-deterministic)
+          (info "Found bad strokes (non-deterministic):" @bad-strokes-nondeterministic)
+          (info "Found bad nodes:" @bad-nodes))
         (cond
           ;; if we have deterministic bad strokes and/or nodes, just take care of them; no need for strategy
           (or (not-empty @bad-strokes-deterministic) (not-empty @bad-nodes))
@@ -196,7 +204,7 @@
           (let [choice (abduce-strategy fdn @bad-strokes-nondeterministic)]
             (recur (assert-black fdn choice)))
           :else
-          (do (when @debugging? (println "\n!!! Axioms failed in spread-abduce.\n\n"))
+          (do (error "\n!!! Axioms failed in spread-abduce.\n\n")
               fdn))))))
 
 (defn black-bad-strokes
@@ -225,19 +233,18 @@
   (loop [fdn fdn]
     (if (check-color-axioms fdn)
       ;; nothing to do, everything checks out
-      (do (when @debugging? (println "\n+++ All axioms satisfied in spread-black.\n\n"))
+      (do (success "\n+++ All axioms satisfied in spread-black.\n\n")
           fdn)
       ;; something to do (inconsistent), spread black.
       (let [bad-strokes (black-bad-strokes fdn)
             bad-nodes (black-bad-nodes fdn)]
-        (when @debugging?
-          (println "\n--- Spreading black.")
-          (println "Found bad strokes:" bad-strokes)
-          (println "Found bad nodes:" bad-nodes))
+        (info "\n--- Spreading black.")
+        (info "Found bad strokes:" bad-strokes)
+        (info "Found bad nodes:" bad-nodes)
         (if (or (not-empty bad-strokes) (not-empty bad-nodes))
           (let [to-assert-black (concat bad-strokes bad-nodes)]
             (recur (reduce assert-black fdn to-assert-black)))
-          (do (when @debugging? (println "\n!!! Axioms failed in spread-black.\n\n"))
+          (do (error "\n!!! Axioms failed in spread-black.\n\n")
               fdn))))))
 
 (defn expand
@@ -247,6 +254,7 @@
                 :or {inc-priorities? true}}]
   (assert (sequential? nodes))
   (assert fdn)
+  (status "\n\n*** Expanding by" nodes)
   (let [fdn-priority (if inc-priorities?
                        (inc-priority-counter fdn)
                        fdn)
@@ -267,7 +275,7 @@
                      abduce? true}}]
   (assert (sequential? nodes))
   (assert fdn)
-  (when @debugging? (println "\n\n*** Contracting by" nodes))
+  (status "\n\n*** Contracting by" nodes)
   (let [fdn-priority (if inc-priorities?
                        (inc-priority-counter fdn)
                        fdn)
@@ -293,6 +301,7 @@
                 :or {white-strategy spread-white-default-strategy
                      inc-priorities? true}}]
   (assert fdn)
+  (status "\n\n*** Revising by" nodes)
   (let [fdn-blackened (expand fdn nodes :inc-priorities? inc-priorities?)]
     (cond
       (check-color-axioms fdn-blackened)
@@ -312,6 +321,7 @@
                     inc-priorities? true}}]
   (assert (sequential? nodes))
   (assert fdn)
+  (status "\n\n*** Abducing by" nodes)
   (let [fdn-priority (if inc-priorities?
                        (inc-priority-counter fdn)
                        fdn)

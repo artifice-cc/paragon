@@ -6,4 +6,5 @@
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [cc.artifice/loom "0.1.5"]
                  [org.clojure/data.csv "0.1.3"]
-                 [org.clojure/math.combinatorics "0.1.1"]])
+                 [org.clojure/math.combinatorics "0.1.1"]
+                 [jansi-clj "0.1.0"]])
