@@ -183,12 +183,12 @@
                                                 ss))
                                   ss))]
     (when bad-stroke
-      (remove-node-or-stroke fdn bad-stroke))))
+      (remove-stroke-or-node fdn bad-stroke))))
 
 (defn remove-inaccessible
   [fdn]
   (let [accessible (set (alg/pre-traverse (graph/graph (:graph fdn)) (first (shuffle (graph/nodes (:graph fdn))))))]
-    (reduce remove-node-or-stroke fdn (filter #(not (accessible %)) (graph/nodes (:graph fdn))))))
+    (reduce remove-stroke-or-node fdn (filter #(not (accessible %)) (graph/nodes (:graph fdn))))))
 
 (defn gen-random-andor-graph
   [node-count chance-split chance-and inconsistent-count]

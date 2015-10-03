@@ -8,15 +8,13 @@
 (defn assert-color
   [fdn stroke-or-node color]
   (info "asserting" stroke-or-node "as" color)
-  (assoc-in fdn [:coloring stroke-or-node] color))
+  (-> fdn
+      (assoc-in [:coloring stroke-or-node] color)
+      (update-priority stroke-or-node)))
 
 (defn assert-black
   [fdn stroke-or-node]
-  (let [fdn-colored (assert-color fdn stroke-or-node :black)
-        black-adjacent (filter #(black? fdn-colored %)
-                               (concat (fdnin fdn-colored stroke-or-node)
-                                       (fdnout fdn-colored stroke-or-node)))]
-    (save-merged-tags fdn-colored stroke-or-node black-adjacent)))
+  (assert-color fdn stroke-or-node :black))
 
 (defn assert-black-initial
   [fdn node]
@@ -26,11 +24,7 @@
 
 (defn assert-white
   [fdn stroke-or-node]
-  (let [fdn-colored (assert-color fdn stroke-or-node :white)
-        white-adjacent (filter #(white? fdn-colored %)
-                               (concat (fdnin fdn-colored stroke-or-node)
-                                       (fdnout fdn-colored stroke-or-node)))]
-    (save-merged-tags fdn-colored stroke-or-node white-adjacent)))
+  (assert-color fdn stroke-or-node :white))
 
 (defn white-bad-strokes
   "Bad stroke w.r.t. white: A stroke (#i) is black but points a white
@@ -54,36 +48,15 @@
   [fdn]
   (doall (filter (fn [n]
                    (let [ins (fdnin fdn n)
-                         all-tags (merge-tags fdn n (concat (fdnin fdn n) (fdnout fdn n)))
-                         tags (collapse-tags all-tags)
                          priority (fdnpriority fdn n)
                          min-in-priority (apply min (map (partial fdnpriority fdn) ins))
                          bad? (and (black? fdn n)
                                    (every? (fn [s] (white? fdn s)) ins)
-                                   (or (and (<= priority min-in-priority)
-                                            #_(or (= :white (:color (last tags)))
-                                                #_(empty? tags)
-                                                #_(not-any? (fn [{:keys [color]}] (= :black color))
-                                                          (set/difference (set (fdntags fdn n)) (set tags)))
-                                                (not-any? (fn [{:keys [node color]}] (and (= n node) (= :black color)))
-                                                          (fdntags fdn n))))
-                                       #_(every? (fn [ts] (some (fn [t] (and (= n (:node t))
-                                                                           (= :black (:color t)))) ts))
-                                               (mapcat #(fdntags fdn %) (fdnin fdn n)))
-                                       #_(every? (fn [ts] (some (fn [t] (and (= n (:node t))
-                                                                             (= :black (:color t)))) ts))
-                                                 (mapcat #(fdntags fdn %) (fdnin fdn n)))
-                                       #_(empty? tags)
-                                       #_(and (< priority min-in-priority)
-                                            (= :white (:color (last tags))))))]
+                                   (<= priority min-in-priority))]
                      (when (black? fdn n)
                        (trace
-                        (format "spread-white: Considering node %s (priority %d, min-in-priority %d); bad node? %s\n\tthis tags: %s\n\tall tags: %s\n\tdiff tags: %s\n\tcollapsed tags: %s\n"
-                                n priority min-in-priority (if bad? "yes" "no")
-                                (clojure.string/join ", " (map pr-str (fdntags fdn n)))
-                                (clojure.string/join ", " (map pr-str all-tags))
-                                (clojure.string/join ", " (map pr-str (collapse-tags (set/difference (set (fdntags fdn n)) (set all-tags)))))
-                                (clojure.string/join ", " (map pr-str tags)))))
+                        (format "spread-white: Considering node %s (priority %d, min-in-priority %d)"
+                                n priority min-in-priority)))
                      bad?))
                  (sort-by fdnstr (nodes fdn)))))
 
@@ -147,21 +120,15 @@
   (doall (filter (fn [s]
                    ;; n is this stroke's single out node
                    (let [n (first (fdnout fdn s))
-                         tags (collapse-tags (merge-tags fdn s [n]))
                          priority (fdnpriority fdn s)
                          out-priority (fdnpriority fdn n)
                          bad? (and (white? fdn s)
                                    (black? fdn n)
                                    (every? (fn [s2] (white? fdn s2)) (fdnin fdn n))
-                                   (or (<= priority out-priority)
-                                       ;; only a single stroke (the one in question) points to this node
-                                       #_(= 1 (count (fdnin fdn n)))
-                                       #_(empty? tags)))]
+                                   (<= priority out-priority))]
                      (when (white? fdn s)
-                       (trace (format "spread-abduce: Considering stroke %s (priority %d, out-priority %d); bad stroke? %s\n\tthese tags: %s\n\tall tags: %s"
-                                      s priority out-priority (if bad? "yes" "no")
-                                      (clojure.string/join ", " (map pr-str (fdntags fdn s)))
-                                      (clojure.string/join ", " (map pr-str tags)))))
+                       (trace (format "spread-abduce: Considering stroke %s (priority %d, out-priority %d)"
+                                      s priority out-priority)))
                      bad?))
                  (sort-by fdnstr (strokes fdn)))))
 
@@ -279,9 +246,7 @@
   (let [fdn-priority (if inc-priorities?
                        (inc-priority-counter fdn)
                        fdn)
-        fdn-tagged (reduce (fn [fdn2 n] (append-tag fdn2 n (gen-observe-tag fdn2 n :white)))
-                           fdn-priority nodes)
-        fdn-asserted (reduce assert-white fdn-tagged nodes)
+        fdn-asserted (reduce assert-white fdn-priority nodes)
         fdn-whitened (spread-white fdn-asserted white-strategy)]
     (cond (check-color-axioms fdn-whitened)
           fdn-whitened
@@ -325,10 +290,8 @@
   (let [fdn-priority (if inc-priorities?
                        (inc-priority-counter fdn)
                        fdn)
-        fdn-tagged (reduce (fn [fdn2 n] (append-tag fdn2 n (gen-observe-tag fdn2 n :black)))
-                           fdn-priority nodes)
-        fdn-asserted-non-initial (reduce assert-black fdn-tagged
-                                         (filter #(not (initial? fdn-tagged %)) nodes))
+        fdn-asserted-non-initial (reduce assert-black fdn-priority
+                                         (filter #(not (initial? fdn-priority %)) nodes))
         fdn-asserted-initial (reduce assert-black-initial fdn-asserted-non-initial
                                      (filter #(initial? fdn-asserted-non-initial %) nodes))
         fdn-blackened (spread-abduce fdn-asserted-initial abduce-strategy)]

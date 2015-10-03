@@ -70,13 +70,13 @@
   [fdn]
   (map first (filter (fn [[_ t]] (= t :stroke)) (seq (:types fdn)))))
 
-(defn remove-node-or-stroke
-  [fdn node-or-stroke]
+(defn remove-stroke-or-node
+  [fdn stroke-or-node]
   (-> fdn
-      (update-in [:graph] graph/remove-nodes node-or-stroke)
-      (update-in [:types] dissoc node-or-stroke)
-      (update-in [:coloring] dissoc node-or-stroke)
-      (update-in [:priorities] dissoc node-or-stroke)))
+      (update-in [:graph] graph/remove-nodes stroke-or-node)
+      (update-in [:types] dissoc stroke-or-node)
+      (update-in [:coloring] dissoc stroke-or-node)
+      (update-in [:priorities] dissoc stroke-or-node)))
 
 (defn fdnstr
   [stroke-or-node]
@@ -121,61 +121,26 @@
   [fdn stroke-or-node]
   (graph/incoming (:graph fdn) stroke-or-node))
 
-(defn fdntags
-  [fdn node-or-stroke]
-  (get-in fdn [:tags node-or-stroke] []))
-
 (defn fdnpriority
-  [fdn node-or-stroke]
-  (if (= :bottom node-or-stroke)
+  [fdn stroke-or-node]
+  (if (= :bottom stroke-or-node)
     ;; bottom has max priority
     Integer/MAX_VALUE
-    (:priority (last (fdntags fdn node-or-stroke)) 0)))
+    (get-in fdn [:priorities stroke-or-node] 0)))
 
-(defn collapse-tags
-  "black/white pairs for the same node are eliminated"
-  [tags]
-  (let [node-groups (group-by :node tags)]
-    (vec (sort-by :priority
-                  (filter identity
-                          (for [[node tags] node-groups]
-                            (let [color-groups (group-by :color tags)]
-                              (cond (> (count (:black color-groups)) (count (:white color-groups)))
-                                    (last (sort-by :priority (:black color-groups)))
-                                    (< (count (:black color-groups)) (count (:white color-groups)))
-                                    (last (sort-by :priority (:white color-groups)))
-                                    :else
-                                    nil))))))))
-
-(defn append-tag
-  [fdn node-or-stroke tag]
-  (let [ts (fdntags fdn node-or-stroke)]
-    (assoc-in fdn [:tags node-or-stroke] (conj ts tag))))
-
-(defn merge-tags
-  [fdn node-or-stroke other-nodes-or-strokes]
-  (let [all-tags (map #(set (get-in fdn [:tags %] [])) (conj other-nodes-or-strokes node-or-stroke))
-        set-tags (apply set/union all-tags)]
-    (vec (sort-by :priority set-tags))))
-
-(defn save-merged-tags
-  "result is saved into node-or-stroke"
-  [fdn node-or-stroke other-nodes-or-strokes]
-  (assoc-in fdn [:tags node-or-stroke] (merge-tags fdn node-or-stroke other-nodes-or-strokes)))
-
-(defn gen-observe-tag
-  [fdn node color] ;; color is :black or :white
-  {:type :observe :node node :color color :priority (get fdn :priority-counter)})
+(defn update-priority
+  [fdn stroke-or-node]
+  (assoc-in fdn [:priorities stroke-or-node] (get fdn :priority-counter)))
 
 (defn inc-priority-counter
   [fdn]
   (update-in fdn [:priority-counter] inc))
 
 (defn is-nondeterministic?
-  [fdn node-or-stroke]
+  [fdn stroke-or-node]
   ;; abduction nondeterminism: multiple incoming strokes
   ;; contraction nondeterminism: multiple incoming nodes
-  (> (count (fdnin fdn node-or-stroke)) 1))
+  (> (count (fdnin fdn stroke-or-node)) 1))
 
 (defn degree
   [fdn stroke-or-node]

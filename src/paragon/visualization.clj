@@ -5,16 +5,8 @@
             [clojure.string :as str]
             [clojure.java.shell :as shell]))
 
-(defn format-tags
-  [fdn stroke-or-node fdnstr-fn]
-  (let [tags (fdntags fdn stroke-or-node)]
-    (if (empty? tags) ""
-        (format "\n%s" (str/join "\n" (for [{:keys [type node color priority]} tags]
-                                        (format "%s%s (%d)" (if (= :black color) "+" "-")
-                                                (fdnstr-fn node) priority)))))))
-
 (defn visualize-dot
-  [fdn node-labels? stroke-labels? tag-labels? fdnstr-fn]
+  [fdn node-labels? stroke-labels? priority-labels? fdnstr-fn]
   (let [g (:graph fdn)
         g-nodes (-> g
                     (graphattr/add-attr-to-nodes :shape :ellipse (nodes fdn))
@@ -38,14 +30,14 @@
                                                                             (str/replace #"&" "&and;")
                                                                             (str/replace #"->" "&rarr;")
                                                                             (str/replace #"bot_" "&perp; "))
-                                                                        (if tag-labels? (format-tags fdn s fdnstr-fn) ""))
+                                                                        (if priority-labels? (format " (%d)" (fdnpriority fdn s)) ""))
                                                                 "&nbsp;")))
                                 g-strokes (strokes fdn))
         g-node-labels (reduce (fn [g n] (graphattr/add-attr g n :label
                                                             (if node-labels?
                                                               (format "%s%s"
                                                                       (or (fdnstr-fn n) "")
-                                                                      (if tag-labels? (format-tags fdn n fdnstr-fn) ""))
+                                                                      (if priority-labels? (format " (%d)" (fdnpriority fdn n)) ""))
                                                               "&nbsp;")))
                               g-stroke-labels (nodes fdn))]
     ;; add bottom node properties (if bottom node exists)
@@ -55,15 +47,15 @@
         (graphattr/add-attr :bottom :shape :none))))
 
 (defn visualize
-  [fdn & {:keys [node-labels? stroke-labels? tag-labels? fdnstr-fn]
-          :or {node-labels? true stroke-labels? true tag-labels? true fdnstr-fn fdnstr}}]
-  (graphio/view (visualize-dot fdn node-labels? stroke-labels? tag-labels? fdnstr-fn)
+  [fdn & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
+          :or {node-labels? true stroke-labels? true priority-labels? true fdnstr-fn fdnstr}}]
+  (graphio/view (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
                 :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defn save-pdf
-  [fdn fname & {:keys [node-labels? stroke-labels? tag-labels? fdnstr-fn]
-               :or {node-labels? true stroke-labels? true tag-labels? false fdnstr-fn fdnstr}}]
-  (let [dot (graphio/dot-str (visualize-dot fdn node-labels? stroke-labels? tag-labels? fdnstr-fn)
+  [fdn fname & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
+               :or {node-labels? true stroke-labels? true priority-labels? false fdnstr-fn fdnstr}}]
+  (let [dot (graphio/dot-str (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
                              :node {:fillcolor :white :style :filled :fontname "sans"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
     (with-open [w (java.io.FileOutputStream. fname)]
