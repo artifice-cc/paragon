@@ -15,7 +15,7 @@
                     (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? fdn %) (nodes fdn)))
                     (graphattr/add-attr-to-nodes :fontcolor :black (filter #(white? fdn %) (nodes fdn))))
         g-strokes (-> g-nodes
-                      (graphattr/add-attr-to-nodes :shape :plain (strokes fdn))
+                      (graphattr/add-attr-to-nodes :shape :box (strokes fdn))
                       (graphattr/add-attr-to-nodes :height 0.1 (strokes fdn))
                       (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? fdn %) (strokes fdn)))
                       (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? fdn %) (strokes fdn)))

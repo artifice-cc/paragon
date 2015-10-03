@@ -217,14 +217,11 @@
 (defn expand
   "Only colors black, and only downwards. May result in an FDN that
   does not satisfy color axioms. Use revise/abduce instead."
-  [fdn nodes & {:keys [inc-priorities?]
-                :or {inc-priorities? true}}]
+  [fdn nodes]
   (assert (sequential? nodes))
   (assert fdn)
   (status "\n\n*** Expanding by" nodes)
-  (let [fdn-priority (if inc-priorities?
-                       (inc-priority-counter fdn)
-                       fdn)
+  (let [fdn-priority (inc-priority-counter fdn)
         fdn-asserted-non-initial (reduce assert-black fdn-priority
                                          (filter #(not (initial? fdn-priority %)) nodes))
         fdn-asserted-initial (reduce assert-black-initial fdn-asserted-non-initial
@@ -235,72 +232,64 @@
   "Colors white (upwards and downwards), and abduces black if color
   axioms are not satisfied. A contraction and abduction \"strategy\"
   may be provided."
-  [fdn nodes & {:keys [white-strategy abduce-strategy inc-priorities? abduce?]
+  [fdn nodes & {:keys [white-strategy abduce-strategy abduce?]
                 :or {white-strategy spread-white-default-strategy
                      abduce-strategy spread-abduce-default-strategy
-                     inc-priorities? true
                      abduce? true}}]
   (assert (sequential? nodes))
   (assert fdn)
   (status "\n\n*** Contracting by" nodes)
-  (let [fdn-priority (if inc-priorities?
-                       (inc-priority-counter fdn)
-                       fdn)
-        fdn-asserted (reduce assert-white fdn-priority nodes)
-        fdn-whitened (spread-white fdn-asserted white-strategy)]
-    (cond (check-color-axioms fdn-whitened)
-          fdn-whitened
-          abduce?
-          (let [fdn-abduced (spread-abduce fdn-whitened abduce-strategy)]
-            (if (check-color-axioms fdn-abduced)
-              fdn-abduced
-              (spread-white fdn-abduced white-strategy)))
-          :else
-          nil)))
+  (let [fdn-priority (inc-priority-counter fdn)
+        fdn-asserted (reduce assert-white fdn-priority nodes)]
+    (loop [fdn-colored (spread-white fdn-asserted white-strategy)
+           last-spread :white]
+      (if (check-color-axioms fdn-colored)
+        fdn-colored
+        (let [new-spread (if (= last-spread :abduce) :white :abduce)
+              new-fdn (if (= new-spread :abduce)
+                        (spread-abduce fdn-colored abduce-strategy)
+                        (spread-white fdn-colored white-strategy))]
+          (recur new-fdn new-spread))))))
 
 (defn revise
   "Only colors black, and only downwards, except when 'bottom' is colored black.
   A white-strategy is needed in case 'bottom' is turned black and
   contraction is required."
-  [fdn nodes & {:keys [white-strategy inc-priorities?]
-                :or {white-strategy spread-white-default-strategy
-                     inc-priorities? true}}]
+  [fdn nodes & {:keys [white-strategy]
+                :or {white-strategy spread-white-default-strategy}}]
   (assert fdn)
   (status "\n\n*** Revising by" nodes)
-  (let [fdn-blackened (expand fdn nodes :inc-priorities? inc-priorities?)]
+  (let [fdn-blackened (expand fdn nodes)]
     (cond
       (check-color-axioms fdn-blackened)
       fdn-blackened
       (some #(black? fdn-blackened %)
             (fdnin fdn-blackened :bottom))
-      (contract fdn-blackened [:bottom] :white-strategy white-strategy :inc-priorities? false)
+      (contract fdn-blackened [:bottom] :white-strategy white-strategy)
       :else
       nil)))
 
 (defn abduce
   "Only colors black (upwards and downwards). An abduction and
   contraction \"strategy\" are needed."
-  [fdn nodes & {:keys [abduce-strategy white-strategy inc-priorities?]
+  [fdn nodes & {:keys [abduce-strategy white-strategy]
                :or {abduce-strategy spread-abduce-default-strategy
-                    white-strategy spread-white-default-strategy
-                    inc-priorities? true}}]
+                    white-strategy spread-white-default-strategy}}]
   (assert (sequential? nodes))
   (assert fdn)
   (status "\n\n*** Abducing by" nodes)
-  (let [fdn-priority (if inc-priorities?
-                       (inc-priority-counter fdn)
-                       fdn)
+  (let [fdn-priority (inc-priority-counter fdn)
         fdn-asserted-non-initial (reduce assert-black fdn-priority
                                          (filter #(not (initial? fdn-priority %)) nodes))
         fdn-asserted-initial (reduce assert-black-initial fdn-asserted-non-initial
-                                     (filter #(initial? fdn-asserted-non-initial %) nodes))
-        fdn-blackened (spread-abduce fdn-asserted-initial abduce-strategy)]
-    (cond
-      (check-color-axioms fdn-blackened)
-      fdn-blackened
-      :else
-      (let [fdn-whitened (spread-white fdn-blackened white-strategy)]
-        (if (check-color-axioms fdn-whitened)
-          fdn-whitened
-          (spread-abduce fdn-whitened abduce-strategy))))))
+                                     (filter #(initial? fdn-asserted-non-initial %) nodes))]
+    (loop [fdn-colored (spread-abduce fdn-asserted-initial abduce-strategy)
+           last-spread :abduce]
+      (if (check-color-axioms fdn-colored)
+        fdn-colored
+        (let [new-spread (if (= last-spread :abduce) :white :abduce)
+              new-fdn (if (= new-spread :abduce)
+                        (spread-abduce fdn-colored abduce-strategy)
+                        (spread-white fdn-colored white-strategy))]
+          (recur new-fdn new-spread))))))
 

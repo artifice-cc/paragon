@@ -523,5 +523,5 @@
         fdn-z-negw-t-negz (contract fdn-z-negw-t [:z])
         fdn-z-negw-t-negz-p (abduce fdn-z-negw-t-negz [:p])
         fdn-z-negw-t-negz-p-negy (with-debugging (contract fdn-z-negw-t-negz-p [:y]))]
-    (visualize fdn-z-negw-t-negz-p-negy)
+    #_(visualize fdn-z-negw-t-negz-p-negy)
     (is (= #{:z :p :v :w :t} (set (believed fdn-z-negw-t-negz-p-negy))))))
