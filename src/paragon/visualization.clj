@@ -49,6 +49,7 @@
         g-strokes (-> g-nodes
                       (graphattr/add-attr-to-nodes :shape (if stroke-labels? :box :underline) (strokes fdn))
                       (graphattr/add-attr-to-nodes :height 0.1 (strokes fdn))
+                      (graphattr/add-attr-to-nodes :fixedsize "true")
                       (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? fdn %) (strokes fdn)))
                       (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? fdn %) (strokes fdn)))
                       (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? fdn %) (strokes fdn)))
@@ -82,13 +83,13 @@
   [fdn & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
           :or {node-labels? true stroke-labels? true priority-labels? true fdnstr-fn fdnstr}}]
   (graphio/view (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
-                :node {:fillcolor :white :style :filled :fontname "sans" :fixedsize "true"}))
+                :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defn save-pdf
   [fdn fname & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
                :or {node-labels? true stroke-labels? true priority-labels? false fdnstr-fn fdnstr}}]
   (let [dot (graphio/dot-str (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
-                             :node {:fillcolor :white :style :filled :fontname "sans" :fixedsize "true"})
+                             :node {:fillcolor :white :style :filled :fontname "sans"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
     (with-open [w (java.io.FileOutputStream. fname)]
       (.write w pdf))))
