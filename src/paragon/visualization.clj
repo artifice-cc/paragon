@@ -5,9 +5,41 @@
             [clojure.string :as str]
             [clojure.java.shell :as shell]))
 
+(def override-visualization-options (atom {}))
+
+(defn turn-off-stroke-labels
+  []
+  (swap! override-visualization-options assoc :stroke-labels :no))
+
+(defn turn-on-stroke-labels
+  []
+  (swap! override-visualization-options assoc :stroke-labels :yes))
+
+(defn revert-stroke-labels
+  []
+  (swap! override-visualization-options dissoc :stroke-labels))
+
+(defn turn-off-priority-labels
+  []
+  (swap! override-visualization-options assoc :priority-labels :no))
+
+(defn turn-on-priority-labels
+  []
+  (swap! override-visualization-options assoc :priority-labels :yes))
+
+(defn revert-priority-labels
+  []
+  (swap! override-visualization-options dissoc :priority-labels))
+
 (defn visualize-dot
   [fdn node-labels? stroke-labels? priority-labels? fdnstr-fn]
-  (let [g (:graph fdn)
+  (let [stroke-labels? (cond (= :yes (:stroke-labels @override-visualization-options)) true
+                             (= :no (:stroke-labels @override-visualization-options)) false
+                             :else stroke-labels?)
+        priority-labels? (cond (= :yes (:priority-labels @override-visualization-options)) true
+                               (= :no (:priority-labels @override-visualization-options)) false
+                               :else priority-labels?)
+        g (:graph fdn)
         g-nodes (-> g
                     (graphattr/add-attr-to-nodes :shape :ellipse (nodes fdn))
                     (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? fdn %) (nodes fdn)))
@@ -15,7 +47,7 @@
                     (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? fdn %) (nodes fdn)))
                     (graphattr/add-attr-to-nodes :fontcolor :black (filter #(white? fdn %) (nodes fdn))))
         g-strokes (-> g-nodes
-                      (graphattr/add-attr-to-nodes :shape :box (strokes fdn))
+                      (graphattr/add-attr-to-nodes :shape (if stroke-labels? :box :underline) (strokes fdn))
                       (graphattr/add-attr-to-nodes :height 0.1 (strokes fdn))
                       (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? fdn %) (strokes fdn)))
                       (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? fdn %) (strokes fdn)))
@@ -50,13 +82,13 @@
   [fdn & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
           :or {node-labels? true stroke-labels? true priority-labels? true fdnstr-fn fdnstr}}]
   (graphio/view (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
-                :node {:fillcolor :white :style :filled :fontname "sans"}))
+                :node {:fillcolor :white :style :filled :fontname "sans" :fixedsize "true"}))
 
 (defn save-pdf
   [fdn fname & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
                :or {node-labels? true stroke-labels? true priority-labels? false fdnstr-fn fdnstr}}]
   (let [dot (graphio/dot-str (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
-                             :node {:fillcolor :white :style :filled :fontname "sans"})
+                             :node {:fillcolor :white :style :filled :fontname "sans" :fixedsize "true"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
     (with-open [w (java.io.FileOutputStream. fname)]
       (.write w pdf))))
