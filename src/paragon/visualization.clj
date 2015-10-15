@@ -49,7 +49,7 @@
         g-strokes (-> g-nodes
                       (graphattr/add-attr-to-nodes :shape (if stroke-labels? :box :underline) (strokes fdn))
                       (graphattr/add-attr-to-nodes :height 0.1 (strokes fdn))
-                      (graphattr/add-attr-to-nodes :fixedsize "true" (strokes fdn))
+                      (graphattr/add-attr-to-nodes :fixedsize (if stroke-labels? "false" "true") (strokes fdn))
                       (graphattr/add-attr-to-nodes :fillcolor :white (filter #(white? fdn %) (strokes fdn)))
                       (graphattr/add-attr-to-nodes :fillcolor :black (filter #(black? fdn %) (strokes fdn)))
                       (graphattr/add-attr-to-nodes :fontcolor :white (filter #(black? fdn %) (strokes fdn)))
