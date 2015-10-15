@@ -58,8 +58,12 @@
   {:types {}
    :coloring {}
    :priorities {} ;; key = node, val = priority # indicating when changed state
-   :observed {} ;; key = node, val = priority # indicating when observed
    :priority-counter 0
+   :fluents #{} ;; set of fluents (global)
+   :initial-stroke-fluents {} ;; key = intiial stroke (only initial strokes allowed), val = seq of keywords (fluent names, ordered for display)
+   :grounded-fluents {} ;; key = fluent, val = grounding
+   :constraint-descs {} ;; key = stroke, val = string
+   :constraint-fns {} ;; key = stroke, val = function
    :graph (graph/digraph)})
 
 (defn nodes
@@ -113,14 +117,6 @@
   [fdn stroke-or-node]
   (= :stroke (fdntype fdn stroke-or-node)))
 
-(defn fdnout
-  [fdn stroke-or-node]
-  (graph/neighbors (:graph fdn) stroke-or-node))
-
-(defn fdnin
-  [fdn stroke-or-node]
-  (graph/incoming (:graph fdn) stroke-or-node))
-
 (defn fdnpriority
   [fdn stroke-or-node]
   (if (= :bottom stroke-or-node)
@@ -136,24 +132,97 @@
   [fdn]
   (update-in fdn [:priority-counter] inc))
 
+(defn initial-stroke?
+  [fdn stroke]
+  (assert (stroke? fdn stroke))
+  (empty? (graph/incoming (:graph fdn) stroke)))
+
+(defn initial?
+  [fdn node]
+  (assert (node? fdn node))
+  ;; this node has a single stroke that has no incoming nodes
+  (and (= 1 (count (graph/incoming (:graph fdn) node)))
+       (empty? (graph/incoming (:graph fdn) (first (graph/incoming (:graph fdn) node))))))
+
+(defn fdnfluents
+  [fdn stroke-or-node]
+  (if (and (stroke? fdn stroke-or-node) (initial-stroke? fdn stroke-or-node))
+    (get-in fdn [:initial-stroke-fluents stroke-or-node] [])
+    (vec (sort (set (mapcat (partial fdnfluents fdn)
+                            ;; can't use (fdnin) because (fdnin) uses the current fdnfluents function
+                            (graph/incoming (:graph fdn) stroke-or-node)))))))
+
+(defn fdn-grounded-fluents
+  "Returns known fluent groundings for a stroke or node. Node/stroke must be black to have groundings and popagate them."
+  [fdn stroke-or-node]
+  (let [fluents (fdnfluents fdn stroke-or-node)]
+    (into {} (filter second (seq (select-keys (:grounded-fluents fdn) fluents))))))
+
+(defn set-fluents
+  [fdn stroke & fluents]
+  (assert (initial-stroke? fdn stroke))
+  (assert (every? keyword? fluents))
+  (assert (apply distinct? fluents))
+  (-> fdn
+      (assoc-in [:initial-stroke-fluents stroke] fluents)
+      (update-in [:fluents] set/union (set fluents))))
+
+(defn grounded-fluents-agree?
+  [grounded-fluents-a grounded-fluents-b]
+  (or (every? (fn [[f v]] (= v (get grounded-fluents-b f v))) (seq grounded-fluents-a))
+      (every? (fn [[f v]] (= v (get grounded-fluents-a f v))) (seq grounded-fluents-b))))
+
+(defn set-grounded-fluents
+  [fdn grounded-fluents]
+  (assert (grounded-fluents-agree? grounded-fluents (:grounded-fluents fdn)))
+  (assert (every? (:fluents fdn) (keys grounded-fluents)))
+  (update-in fdn [:grounded-fluents] merge grounded-fluents))
+
+(defn set-stroke-constraint
+  [fdn stroke constraint-desc constraint-fn]
+  (assert (stroke? fdn stroke))
+  (-> fdn
+      (assoc-in [:constraint-descs stroke] constraint-desc)
+      (assoc-in [:constraint-fns stroke] constraint-fn)))
+
+(defn get-stroke-constraint
+  [fdn stroke]
+  (assert (stroke? fdn stroke))
+  {:desc (get-in fdn [:constraint-descs stroke])
+   :fn (get-in fdn [:constraint-fns stroke])})
+
+(defn fdnout
+  [fdn stroke-or-node]
+  (let [this-gf (fdn-grounded-fluents fdn stroke-or-node)
+        out (graph/neighbors (:graph fdn) stroke-or-node)]
+    ;; restrict out to those whose fluents agree
+    (filter (fn [s-or-n] (grounded-fluents-agree? this-gf (fdn-grounded-fluents fdn s-or-n))) out)))
+
+(defn fdnin
+  [fdn stroke-or-node]
+  (let [this-gf (fdn-grounded-fluents fdn stroke-or-node)
+        in (graph/incoming (:graph fdn) stroke-or-node)]
+    ;; restrict in to those whose fluents agree
+    (filter (fn [s-or-n] (grounded-fluents-agree? this-gf (fdn-grounded-fluents fdn s-or-n))) in)))
+
 (defn is-nondeterministic?
   [fdn stroke-or-node]
   ;; abduction nondeterminism: multiple incoming strokes
   ;; contraction nondeterminism: multiple incoming nodes
   (> (count (fdnin fdn stroke-or-node)) 1))
 
-(defn degree
-  [fdn stroke-or-node]
-  (+ (graph/in-degree (:graph fdn) stroke-or-node)
-     (graph/degree (:graph fdn) stroke-or-node)))
-
 (defn in-degree
   [fdn stroke-or-node]
-  (graph/in-degree (:graph fdn) stroke-or-node))
+  (count (fdnin fdn stroke-or-node)))
 
 (defn out-degree
   [fdn stroke-or-node]
-  (graph/degree (:graph fdn) stroke-or-node))
+  (count (fdnout fdn stroke-or-node)))
+
+(defn degree
+  [fdn stroke-or-node]
+  (+ (in-degree fdn stroke-or-node)
+     (out-degree fdn stroke-or-node)))
 
 (defn believed
   "Returns black nodes."
@@ -173,13 +242,6 @@
     (filter (fn [n] (or (and (bel1 n) (not (bel2 n)))
                         (and (not (bel1 n)) (bel2 n))))
             (nodes fdn1))))
-
-(defn initial?
-  [fdn node]
-  (assert (node? fdn node))
-  ;; this node has a single stroke that has no incoming nodes
-  (and (= 1 (count (fdnin fdn node)))
-       (empty? (fdnin fdn (first (fdnin fdn node))))))
 
 ;;;;
 ;;;; CONSTRUCTION
@@ -210,31 +272,40 @@
 
 (defn- can-explain-single-hyp
   "Link hyp to explananda via an intermediate stroke."
-  [fdn hyp explananda]
-  (reduce (fn [fdn2 ev]
-            (let [stroke (format "%s->%s" (fdnstr hyp) (fdnstr ev))]
-              (-> fdn2
-                  (forall-just [hyp] stroke)
-                  (exists-just [stroke] ev))))
-          fdn explananda))
+  ([fdn hyp explananda]
+   (can-explain-single-hyp fdn hyp explananda nil nil))
+  ([fdn hyp explananda constraint-desc constraint-fn]
+   (reduce (fn [fdn2 ev]
+             (let [stroke (format "%s->%s" (fdnstr hyp) (fdnstr ev))]
+               (-> fdn2
+                   (forall-just [hyp] stroke)
+                   (exists-just [stroke] ev)
+                   (set-stroke-constraint stroke constraint-desc constraint-fn))))
+           fdn explananda)))
 
 (defn- can-explain-conjunction-hyp
   "Link each in explanatia to strokes that point to a special conjunction node (one for each explananda),
   which then links to each explananda."
-  [fdn explanantia explananda]
-  (reduce (fn [fdn2 ev]
-            (let [stroke (format "%s->%s" (str/join "&" (map fdnstr explanantia)) (fdnstr ev))
-                  fdn-hyps-stroke (forall-just fdn2 explanantia stroke)]
-              (exists-just fdn-hyps-stroke [stroke] ev)))
-          fdn explananda))
+  ([fdn explanantia explananda]
+   (can-explain-conjunction-hyp fdn explanantia explananda nil nil))
+  ([fdn explanantia explananda constraint-desc constraint-fn]
+   (reduce (fn [fdn2 ev]
+             (let [stroke (format "%s->%s" (str/join "&" (map fdnstr explanantia)) (fdnstr ev))]
+               (-> fdn2
+                   (forall-just explanantia stroke)
+                   (exists-just [stroke] ev)
+                   (set-stroke-constraint stroke constraint-desc constraint-fn))))
+           fdn explananda)))
 
 (defn can-explain
   "The explananda, as a conjunction, justify each of the explanantia."
-  [fdn explanantia explananda]
-  (assert (and (sequential? explanantia) (sequential? explananda)))
-  (if (second explanantia)
-    (can-explain-conjunction-hyp fdn explanantia explananda)
-    (can-explain-single-hyp fdn (first explanantia) explananda)))
+  ([fdn explanantia explananda]
+   (can-explain fdn explanantia explananda nil nil))
+  ([fdn explanantia explananda constraint-desc constraint-fn]
+   (assert (and (sequential? explanantia) (sequential? explananda)))
+   (if (second explanantia)
+     (can-explain-conjunction-hyp fdn explanantia explananda constraint-desc constraint-fn)
+     (can-explain-single-hyp fdn (first explanantia) explananda constraint-desc constraint-fn))))
 
 (defn add-inconsistencies
   "Indicate nodes that cannot all be simultaneously believed.
