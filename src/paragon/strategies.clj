@@ -4,23 +4,13 @@
             [loom.alg :as alg]
             [clojure.set :as set]))
 
-(defn spread-abduce-default-strategy
-  "Guaranteed that bad-strokes is not empty. Prefers lower priority,
-  otherwise prefers lexicographically."
-  [fdn bad-strokes]
-  (let [best-bad-stroke (first (sort-by (fn [s] [(fdnpriority fdn s) (fdnstr s)])
-                                        bad-strokes))]
-    (info "Choosing bad stroke:" best-bad-stroke)
-    best-bad-stroke))
-
-(defn spread-white-default-strategy
-  "Guaranteed that bad-nodes is not empty. Prefers lower priority,
-  otherwise prefers lexicographically."
-  [fdn bad-nodes]
-  (let [best-bad-node (first (sort-by (fn [n] [(fdnpriority fdn n) (fdnstr n)])
-                                      bad-nodes))]
-    (info "Choosing bad node:" best-bad-node)
-    best-bad-node))
+(defn default-strategy
+  "Prefers lower priority, otherwise prefers lexicographically."
+  [fdn bad-nodes-and-strokes]
+  (let [best (first (sort-by (fn [n-or-s] [(fdnpriority fdn n-or-s) (fdnstr n-or-s)])
+                             bad-nodes-and-strokes))]
+    (info "Choosing:" best)
+    best))
 
 (defn strategy-rand
   [_ ns-or-ss]

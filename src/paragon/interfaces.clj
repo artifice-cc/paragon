@@ -23,7 +23,7 @@
 
 (defn parse-com-output
   [fdn output]
-  (spread-black
+  (spread-color
    (reduce (fn [fdn [initials conclusion]]
              (if (= initials conclusion)
                (-> fdn (assert-black (format "s%s" conclusion))

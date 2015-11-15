@@ -8,6 +8,8 @@
             [paragon.builders :refer :all]
             [paragon.strategies :refer :all]))
 
+#_(turn-on-debugging)
+
 (deftest test-basic-operations
   (let [fdn (-> (new-fdn)
                (add-initial :n))]
@@ -262,16 +264,16 @@
         fdn-6 (build-from-query ["AND" :c ["OR" :a :b]] [:x])
         fdn-7 (build-from-query ["AND" :c ["OR" :b :a]] [:x])
         fdn-8 (build-from-query ["AND" ["OR" :b :a] :c] [:x])]
-    (is (black? (revise fdn-1 [:a]) :x))
-    (is (black? (revise fdn-2 [:a :b :c :d]) :x))
-    (is (white? (revise fdn-2 [:a :b :c]) :x))
-    (is (white? (revise fdn-2 [:a :b]) :x))
-    (is (white? (revise fdn-2 [:a]) :x))
-    (is (black? (revise fdn-3 [:a :b :c :d]) :x))
-    (is (black? (revise fdn-3 [:a :b :c]) :x))
-    (is (black? (revise fdn-3 [:a :b]) :x))
-    (is (black? (revise fdn-3 [:a]) :x))
-    #_(is (white? (revise fdn-4 [:a]) :x))
+    (is (black? (abduce fdn-1 [:a]) :x))
+    (is (black? (abduce fdn-2 [:a :b :c :d]) :x))
+    (is (white? (abduce fdn-2 [:a :b :c]) :x))
+    (is (white? (abduce fdn-2 [:a :b]) :x))
+    (is (white? (abduce fdn-2 [:a]) :x))
+    (is (black? (abduce fdn-3 [:a :b :c :d]) :x))
+    (is (black? (abduce fdn-3 [:a :b :c]) :x))
+    (is (black? (abduce fdn-3 [:a :b]) :x))
+    (is (black? (abduce fdn-3 [:a]) :x))
+    #_(is (white? (abduce fdn-4 [:a]) :x))
     #_(visualize fdn-1)
     #_(visualize fdn-2)
     #_(visualize fdn-3)

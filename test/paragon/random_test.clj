@@ -153,7 +153,7 @@
                                                                                             (let [fdn-expanded (-> fdn-final
                                                                                                                   (add-initial n)
                                                                                                                   (assert-black (format ".%s" (fdnstr n)))
-                                                                                                                  (spread-black))]
+                                                                                                                  (spread-color))]
                                                                                               (every? #(black? fdn-expanded %) contract-ns)))
                                                                                           whitened))
                                                                   recovers-pct (when (not-empty whitened)
