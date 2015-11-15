@@ -38,8 +38,7 @@
               (and (black? fdn s)
                    (or (and (white? fdn n)
                             (<= priority (fdnpriority fdn n)))
-                       (and (not-empty ins)
-                            (some (fn [n2]
+                       (and (some (fn [n2]
                                     (and (white? fdn n2)
                                          (<= priority (fdnpriority fdn n2))))
                                   ins))))))
@@ -52,17 +51,17 @@
   of its incoming strokes are white and all strokes have priority (#i)
   such that j <= i."
   [fdn]
-  (doall (filter (fn [n]
-                   (let [ins (fdnin fdn n)
-                         priority (fdnpriority fdn n)
-                         bad? (and (black? fdn n)
-                                   (every? (fn [s] (white? fdn s)) ins)
-                                   (every? (fn [s] (<= priority (fdnpriority fdn s))) ins))]
-                     (when (black? fdn n)
-                       (trace
-                        (format "black-bad-nodes-deterministic: Considering node %s (priority %d)" n priority)))
-                     bad?))
-                 (sort-by fdnstr (nodes fdn)))))
+  (filter (fn [n]
+            (let [ins (fdnin fdn n)
+                  priority (fdnpriority fdn n)
+                  bad? (and (black? fdn n)
+                            (every? (fn [s] (white? fdn s)) ins)
+                            (every? (fn [s] (<= priority (fdnpriority fdn s))) ins))]
+              (when (black? fdn n)
+                (trace
+                 (format "black-bad-nodes-deterministic: Considering node %s (priority %d)" n priority)))
+              bad?))
+          (sort-by fdnstr (nodes fdn))))
 
 (defn black-bad-nodes-nondeterministic
   "Bad node w.r.t. white (non-deterministic): A node (#i) is black but
@@ -102,21 +101,21 @@
   white but points to a black node (#j) that has only white strokes
   pointing to it, and j >= i."
   [fdn]
-  (doall (filter (fn [s]
-                   ;; n is this stroke's single out node
-                   (let [n (first (fdnout fdn s))
-                         priority (fdnpriority fdn s)
-                         out-priority (fdnpriority fdn n)
-                         ins (fdnin fdn s)
-                         bad? (and (white? fdn s)
-                                   (black? fdn n)
-                                   (every? (fn [s2] (white? fdn s2)) (fdnin fdn n))
-                                   (< priority out-priority))]
-                     (when (white? fdn s)
-                       (trace (format "white-bad-strokes-nondeterministic: Considering stroke %s (priority %d, out-priority %d)"
-                                      s priority out-priority)))
-                     bad?))
-                 (sort-by fdnstr (strokes fdn)))))
+  (filter (fn [s]
+            ;; n is this stroke's single out node
+            (let [n (first (fdnout fdn s))
+                  priority (fdnpriority fdn s)
+                  out-priority (fdnpriority fdn n)
+                  ins (fdnin fdn s)
+                  bad? (and (white? fdn s)
+                            (black? fdn n)
+                            (every? (fn [s2] (white? fdn s2)) (fdnin fdn n))
+                            (< priority out-priority))]
+              (when (white? fdn s)
+                (trace (format "white-bad-strokes-nondeterministic: Considering stroke %s (priority %d, out-priority %d)"
+                               s priority out-priority)))
+              bad?))
+          (sort-by fdnstr (strokes fdn))))
 
 (defn white-bad-nodes
   "Bad node w.r.t. abduction: A node (#i) is white but is pointed to
