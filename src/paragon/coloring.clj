@@ -26,7 +26,7 @@
   [fdn stroke-or-node]
   (assert-color fdn stroke-or-node :white))
 
-(defn white-bad-strokes
+(defn black-bad-strokes
   "Bad stroke w.r.t. white: A stroke (#i) is black but points a white
   node (#j) and i <= j; or a stroke (#j) is black but some white
   node (#i) points to it, and j <= i."
@@ -45,7 +45,7 @@
                                   ins))))))
           (sort-by fdnstr (strokes fdn))))
 
-(defn white-bad-nodes-deterministic
+(defn black-bad-nodes-deterministic
   "TODO: update.
 
   Bad node w.r.t. white (deterministic): A node (#j) is black but all
@@ -66,7 +66,7 @@
                      bad?))
                  (sort-by fdnstr (nodes fdn)))))
 
-(defn white-bad-nodes-nondeterministic
+(defn black-bad-nodes-nondeterministic
   "Bad node w.r.t. white (non-deterministic): A node (#i) is black but
   points to a white stroke (#j) that has only black nodes pointing to
   it, and j >= i. One of these black nodes must turn white."
@@ -88,7 +88,7 @@
                          outs))))
           (sort-by fdnstr (nodes fdn))))
 
-(defn abduce-bad-strokes-deterministic
+(defn white-bad-strokes-deterministic
   "Bad stroke w.r.t. abduction (deterministic): A stroke (#j) is white
   but all its incoming nodes are black and have priority (#i) such
   that j <= i."
@@ -103,7 +103,7 @@
                                 ins)))))
           (sort-by fdnstr (strokes fdn))))
 
-(defn abduce-bad-strokes-nondeterministic
+(defn white-bad-strokes-nondeterministic
   "Bad stroke w.r.t. abduction (non-deterministic): A stroke (#i) is
   white but points to a black node (#j) that has only white strokes
   pointing to it, and j >= i."
@@ -126,7 +126,7 @@
                      bad?))
                  (sort-by fdnstr (strokes fdn)))))
 
-(defn abduce-bad-nodes
+(defn white-bad-nodes
   "Bad node w.r.t. abduction: A node (#i) is white but is pointed to
   by a black stroke (#j) or points to a black stroke (#j), and j >=
   i."
@@ -149,12 +149,12 @@
 
 (defn spread-color
   [fdn strategy]
-  (let [bad-black-strokes-deterministic (white-bad-strokes fdn)
-        bad-white-strokes-deterministic (abduce-bad-strokes-deterministic fdn)
-        bad-white-strokes-nondeterministic (abduce-bad-strokes-nondeterministic fdn)
-        bad-black-nodes-deterministic (white-bad-nodes-deterministic fdn)
-        bad-white-nodes-deterministic (abduce-bad-nodes fdn)
-        bad-black-nodes-nondeterministic (white-bad-nodes-nondeterministic fdn)
+  (let [bad-black-strokes-deterministic (black-bad-strokes fdn)
+        bad-white-strokes-deterministic (white-bad-strokes-deterministic fdn)
+        bad-white-strokes-nondeterministic (white-bad-strokes-nondeterministic fdn)
+        bad-black-nodes-deterministic (black-bad-nodes-deterministic fdn)
+        bad-white-nodes-deterministic (white-bad-nodes fdn)
+        bad-black-nodes-nondeterministic (black-bad-nodes-nondeterministic fdn)
         bad-deterministic (concat bad-black-strokes-deterministic
                                   bad-white-strokes-deterministic
                                   bad-black-nodes-deterministic
