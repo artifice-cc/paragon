@@ -56,13 +56,11 @@
                    (let [ins (fdnin fdn n)
                          priority (fdnpriority fdn n)
                          bad? (and (black? fdn n)
-                                   (every? (fn [s]
-                                             (and (white? fdn s)
-                                                  (<= priority (fdnpriority fdn s))))
-                                           ins))]
+                                   (every? (fn [s] (white? fdn s)) ins)
+                                   (every? (fn [s] (<= priority (fdnpriority fdn s))) ins))]
                      (when (black? fdn n)
                        (trace
-                        (format "spread-white: Considering node %s (priority %d)" n priority)))
+                        (format "black-bad-nodes-deterministic: Considering node %s (priority %d)" n priority)))
                      bad?))
                  (sort-by fdnstr (nodes fdn)))))
 
@@ -74,13 +72,10 @@
   (filter (fn [n]
             (let [priority (fdnpriority fdn n)
                   outs (fdnout fdn n)]
-              (when (black? fdn n)
-                (trace
-                 (format "spread-white: Considering node %s (priority %d)" n priority)))
               (and (black? fdn n)
                    (some (fn [s]
                            (trace
-                            (format "spread-white: Considering node %s (priority %d), stroke %s (priority %s)"
+                            (format "black-bad-nodes-nondeterministic: Considering node %s (priority %d), stroke %s (priority %s)"
                                     n priority s (fdnpriority fdn s)))
                            (and (white? fdn s)
                                 (every? (fn [n2] (black? fdn n2)) (fdnin fdn s))
@@ -98,9 +93,8 @@
                   ins (fdnin fdn s)]
               (and (white? fdn s)
                    (and (not-empty ins)
-                        (every? (fn [n] (and (black? fdn n)
-                                             (< priority (fdnpriority fdn n))))
-                                ins)))))
+                        (every? (fn [n] (black? fdn n)) ins)
+                        (some (fn [n] (< priority (fdnpriority fdn n))) ins)))))
           (sort-by fdnstr (strokes fdn))))
 
 (defn white-bad-strokes-nondeterministic
@@ -116,12 +110,10 @@
                          ins (fdnin fdn s)
                          bad? (and (white? fdn s)
                                    (black? fdn n)
-                                   (every? (fn [s2] (and (white? fdn s2)
-                                                         (<= priority (fdnpriority fdn s2))))
-                                           (fdnin fdn n))
-                                   (<= priority out-priority))]
+                                   (every? (fn [s2] (white? fdn s2)) (fdnin fdn n))
+                                   (< priority out-priority))]
                      (when (white? fdn s)
-                       (trace (format "spread-abduce: Considering stroke %s (priority %d, out-priority %d)"
+                       (trace (format "white-bad-strokes-nondeterministic: Considering stroke %s (priority %d, out-priority %d)"
                                       s priority out-priority)))
                      bad?))
                  (sort-by fdnstr (strokes fdn)))))
@@ -135,15 +127,14 @@
             (let [priority (fdnpriority fdn n)
                   ins (fdnin fdn n)
                   outs (fdnout fdn n)]
-              (and (not= :bottom n)
-                   (white? fdn n)
+              (and (white? fdn n)
                    (or (some (fn [s]
                                (and (black? fdn s)
-                                    (<= priority (fdnpriority fdn s))))
+                                    (< priority (fdnpriority fdn s))))
                              ins)
                        (some (fn [s]
                                (and (black? fdn s)
-                                    (<= priority (fdnpriority fdn s))))
+                                    (< priority (fdnpriority fdn s))))
                              outs)))))
           (sort-by fdnstr (nodes fdn))))
 
@@ -176,6 +167,7 @@
                                   (assert-white fdn2 n-or-s)))
               fdn bad-deterministic)
       (let [choice (strategy fdn bad-nondeterministic)]
+        (assert choice)
         (if (white? fdn choice)
           (assert-black fdn choice)
           (assert-white fdn choice))))))
@@ -187,7 +179,7 @@
   (status "\n\n*** Contracting by" nodes)
   (let [fdn-priority (inc-priority-counter fdn)
         fdn-asserted (reduce assert-white fdn-priority nodes)]
-    (loop [fdn-colored (spread-color fdn-asserted strategy)]
+    (loop [fdn-colored fdn-asserted]
       (if (check-color-axioms fdn-colored)
         fdn-colored
         (recur (spread-color fdn-colored strategy))))))
@@ -202,7 +194,7 @@
                                          (filter #(not (initial? fdn-priority %)) nodes))
         fdn-asserted-initial (reduce assert-black-initial fdn-asserted-non-initial
                                      (filter #(initial? fdn-asserted-non-initial %) nodes))]
-    (loop [fdn-colored (spread-color fdn-asserted-initial strategy)]
+    (loop [fdn-colored fdn-asserted-initial]
       (if (check-color-axioms fdn-colored)
         fdn-colored
         (recur (spread-color fdn-colored strategy))))))
