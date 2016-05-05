@@ -50,7 +50,7 @@
   (print-msg msgs (comp jansi/bold jansi/red)))
 
 ;;;;
-;;;; PRIMITIVES / DATA STRUCTURES
+;;;; PRIMITIVES / DATA STRUCTURES / QUERIES
 ;;;;
 
 (defn new-fdn
@@ -86,6 +86,12 @@
         (str (:id stroke-or-node))
         (string? stroke-or-node)
         stroke-or-node
+        (and (vector? stroke-or-node) (= = (first stroke-or-node))) ;; var assignment, e.g., [= :x :5]
+        (format "%s=%s" (fdnstr (nth stroke-or-node 1))
+                (fdnstr (nth stroke-or-node 2)))
+        (vector? stroke-or-node) ;; a predicate, e.g., [:parent :x :y]
+        (format "%s(%s)" (fdnstr (first stroke-or-node))
+                (str/join ", " (map fdnstr (rest stroke-or-node))))
         :else
         (pr-str stroke-or-node)))
 
@@ -181,6 +187,38 @@
   (and (= 1 (count (fdnin fdn node)))
        (empty? (fdnin fdn (first (fdnin fdn node))))))
 
+(defn predicate?
+  "Returns true if input has the form of a predicate node."
+  [n]
+  (and (vector? n) (not= = (first n))))
+
+(defn predicates
+  "Returns nodes with variables."
+  [fdn]
+  (filter predicate? (nodes fdn)))
+
+(defn variable?
+  "Returns true if input has the form of a variable node."
+  [n]
+  (and (vector? n) (= 3 (count n)) (= = (first n))))
+
+(defn variables
+  "Returns nodes representing variables."
+  [fdn]
+  (map second (filter variable? (nodes fdn))))
+
+(defn believed-predicate-assignments
+  "Returns list of predicates and their believed assignments (for those predicates that have believed assignments."
+  [fdn]
+  (for [pred (predicates fdn)]
+    (let [vars (rest pred)
+          vars-instances (mapcat (fn [var] (filter (fn [n] (and (variable? n) (= (second n) var)))
+                                                   (nodes fdn)))
+                                 vars)
+          black-vars-instances (filter #(black? fdn %) vars-instances)
+          black-vars-map (into {} (map (comp vec rest) black-vars-instances))]
+      (vec (concat [(first pred)] (map (fn [var] (get black-vars-map var)) (rest pred)))))))
+
 ;;;;
 ;;;; CONSTRUCTION
 ;;;;
@@ -248,3 +286,27 @@
                   (exists-just [botstroke] :bottom))))
           fdn nodesets))
 
+(defn candidates
+  "Builds a predicate node (with variables, e.g., \"parent(x,y)\") and
+  establishes candidate instantiations of the variables. Also builds
+  nodes for the variables and ensures various assignments for the same
+  variable are incompatible. In this way, variable names are
+  global (so any node referring to \"x\" is referring to the same
+  \"x\" assignment).
+
+  Usage example: (candidates fdn [:parent :x :y] [{:x :joe :y :jane} {:x :jim :y :same}])"
+  [fdn predicate var-maps]
+  (let [fdn-vars (reduce (fn [fdn2 var-map]
+                           (let [var-instances (map (fn [[var val]] [= var val]) (seq var-map))
+                                 fdn-instances (reduce (fn [fdn3 var-instance]
+                                                         (add-initial fdn3 var-instance))
+                                                       fdn2 var-instances)]
+                             (can-explain fdn-instances var-instances [predicate])))
+                         fdn var-maps)]
+    ;; now add inconsistencies among the various variable assignments
+    (reduce (fn [fdn4 var]
+              (add-inconsistencies fdn4 (map (fn [[var val]] [= var val])
+                                             (map (fn [var-map] [var (get var-map var)])
+                                                  var-maps))))
+            ;; (rest predicate) should give the vars for the predicate
+            fdn-vars (rest predicate))))
