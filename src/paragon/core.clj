@@ -208,7 +208,9 @@
   (map second (filter variable? (nodes fdn))))
 
 (defn believed-predicate-assignments
-  "Returns list of predicates and their believed assignments (for those predicates that have believed assignments."
+  "Returns list of predicates and their believed assignments (for those predicates that have believed assignments.
+
+  Example output: ([:parent :jim :sam] [:father :jim :sam] [:male :jim])"
   [fdn]
   (for [pred (predicates fdn)]
     (let [vars (rest pred)
