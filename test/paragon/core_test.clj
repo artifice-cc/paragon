@@ -15,6 +15,15 @@
                (add-initial :n))]
     (is (initial? fdn :n))))
 
+(deftest test-cycles
+  (let [fdn (-> (new-fdn)
+                (can-explain [:a] [:b])
+                (can-explain [:b] [:a]))
+        fdn-abd (abduce fdn [:a])
+        fdn-abd-con (contract fdn [:b])]
+    (is (= #{:a :b} (set (believed fdn-abd))))
+    (is (= #{} (set (believed fdn-abd-con))))))
+
 (deftest test-convert-to-prolog
   (let [fdn (-> (new-fdn)
                (add-initial :n))

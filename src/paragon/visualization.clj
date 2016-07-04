@@ -31,9 +31,29 @@
   []
   (swap! override-visualization-options dissoc :priority-labels))
 
+(defn turn-off-inconsistency-nodes
+  []
+  (swap! override-visualization-options assoc :inconsistency-nodes :no))
+
+(defn turn-on-inconsistency-nodes
+  []
+  (swap! override-visualization-options assoc :inconsistency-nodes :yes))
+
+(defn revert-inconsistency-nodes
+  []
+  (swap! override-visualization-options dissoc :inconsistency-nodes))
+
 (defn visualize-dot
-  [fdn node-labels? stroke-labels? priority-labels? fdnstr-fn]
-  (let [stroke-labels? (cond (= :yes (:stroke-labels @override-visualization-options)) true
+  [fdn node-labels? stroke-labels? priority-labels? inconsistency-nodes? fdnstr-fn]
+  (let [inconsistency-nodes? (cond (= :yes (:inconsistency-nodes @override-visualization-options)) true
+                                   (= :no (:inconsistency-nodes @override-visualization-options)) false
+                                   :else inconsistency-nodes?)
+        fdn (if inconsistency-nodes? fdn
+                ;; if requested, remove all inconsistency nodes
+                (reduce remove-stroke-or-node
+                        fdn (conj (filter (fn [s] (and (string? s) (.startsWith s "bot_"))) (strokes fdn))
+                                  :bottom)))
+        stroke-labels? (cond (= :yes (:stroke-labels @override-visualization-options)) true
                              (= :no (:stroke-labels @override-visualization-options)) false
                              :else stroke-labels?)
         priority-labels? (cond (= :yes (:priority-labels @override-visualization-options)) true
@@ -80,15 +100,15 @@
         (graphattr/add-attr :bottom :shape :none))))
 
 (defn visualize
-  [fdn & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
-          :or {node-labels? true stroke-labels? true priority-labels? true fdnstr-fn fdnstr}}]
-  (graphio/view (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
+  [fdn & {:keys [node-labels? stroke-labels? priority-labels? inconsistency-nodes? fdnstr-fn]
+          :or {node-labels? true stroke-labels? true priority-labels? true inconsistency-nodes? true fdnstr-fn fdnstr}}]
+  (graphio/view (visualize-dot fdn node-labels? stroke-labels? priority-labels? inconsistency-nodes? fdnstr-fn)
                 :node {:fillcolor :white :style :filled :fontname "sans"}))
 
 (defn save-pdf
-  [fdn fname & {:keys [node-labels? stroke-labels? priority-labels? fdnstr-fn]
-               :or {node-labels? true stroke-labels? true priority-labels? false fdnstr-fn fdnstr}}]
-  (let [dot (graphio/dot-str (visualize-dot fdn node-labels? stroke-labels? priority-labels? fdnstr-fn)
+  [fdn fname & {:keys [node-labels? stroke-labels? priority-labels? inconsistency-nodes? fdnstr-fn]
+               :or {node-labels? true stroke-labels? true priority-labels? false inconsistency-nodes? true fdnstr-fn fdnstr}}]
+  (let [dot (graphio/dot-str (visualize-dot fdn node-labels? stroke-labels? priority-labels? inconsistency-nodes? fdnstr-fn)
                              :node {:fillcolor :white :style :filled :fontname "sans"})
         {pdf :out} (shell/sh "dot" "-Tpdf" :in dot :out-enc :bytes)]
     (with-open [w (java.io.FileOutputStream. fname)]
