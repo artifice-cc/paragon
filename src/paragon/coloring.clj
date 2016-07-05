@@ -8,9 +8,20 @@
 (defn assert-color
   [fdn stroke-or-node color]
   (info "asserting" stroke-or-node "as" color)
-  (-> fdn
-      (assoc-in [:coloring stroke-or-node] color)
-      (update-priority stroke-or-node)))
+  (let [fdn2 (-> fdn
+                 (assoc-in [:coloring stroke-or-node] color)
+                 (update-priority stroke-or-node))]
+    (if (:cache fdn2)
+      (if (stroke? fdn2 stroke-or-node)
+        (-> fdn2
+            (update-in [:cache :strokes] set/union (set (mapcat #(fdnin fdn2 %) (fdnout fdn2 stroke-or-node))))
+            (update-in [:cache :nodes] set/union (set (concat (fdnin fdn2 stroke-or-node)
+                                                              (fdnout fdn2 stroke-or-node)))))
+        (-> fdn2
+            (update-in [:cache :nodes] set/union (set (mapcat #(fdnin fdn2 %) (fdnout fdn2 stroke-or-node))))
+            (update-in [:cache :strokes] set/union (set (concat (fdnin fdn2 stroke-or-node)
+                                                                (fdnout fdn2 stroke-or-node))))))
+      fdn2)))
 
 (defn assert-black
   [fdn stroke-or-node]
@@ -25,6 +36,20 @@
 (defn assert-white
   [fdn stroke-or-node]
   (assert-color fdn stroke-or-node :white))
+
+(defn strokes-cached
+  "Return only those strokes that are members or neighbors-of-members in the cache."
+  [fdn]
+  (if-let [cache (:cache fdn)]
+    (:strokes cache)
+    (strokes fdn)))
+
+(defn nodes-cached
+  "Return only those nodes that are members or neighbors-of-members in the cache."
+  [fdn]
+  (if-let [cache (:cache fdn)]
+    (:nodes cache)
+    (nodes fdn)))
 
 (defn black-bad-strokes
   "Bad stroke w.r.t. white: A stroke (#i) is black but points a white
@@ -42,7 +67,7 @@
                                     (and (white? fdn n2)
                                          (<= priority (fdnpriority fdn n2))))
                                   ins))))))
-          (sort-by fdnstr (strokes fdn))))
+          (sort-by fdnstr (strokes-cached fdn))))
 
 (defn black-bad-nodes-deterministic
   "TODO: update.
@@ -57,11 +82,11 @@
                   bad? (and (black? fdn n)
                             (every? (fn [s] (white? fdn s)) ins)
                             (every? (fn [s] (<= priority (fdnpriority fdn s))) ins))]
-              (when (black? fdn n)
+              #_(when (black? fdn n)
                 (trace
                  (format "black-bad-nodes-deterministic: Considering node %s (priority %d)" n priority)))
               bad?))
-          (sort-by fdnstr (nodes fdn))))
+          (sort-by fdnstr (nodes-cached fdn))))
 
 (defn black-bad-nodes-nondeterministic
   "Bad node w.r.t. white (non-deterministic): A node (#i) is black but
@@ -73,14 +98,14 @@
                   outs (fdnout fdn n)]
               (and (black? fdn n)
                    (some (fn [s]
-                           (trace
+                           #_(trace
                             (format "black-bad-nodes-nondeterministic: Considering node %s (priority %d), stroke %s (priority %s)"
                                     n priority s (fdnpriority fdn s)))
                            (and (white? fdn s)
                                 (every? (fn [n2] (black? fdn n2)) (fdnin fdn s))
                                 (<= priority (fdnpriority fdn s))))
                          outs))))
-          (sort-by fdnstr (nodes fdn))))
+          (sort-by fdnstr (nodes-cached fdn))))
 
 (defn white-bad-strokes-deterministic
   "Bad stroke w.r.t. abduction (deterministic): A stroke (#j) is white
@@ -94,7 +119,7 @@
                    (and (not-empty ins)
                         (every? (fn [n] (black? fdn n)) ins)
                         (some (fn [n] (< priority (fdnpriority fdn n))) ins)))))
-          (sort-by fdnstr (strokes fdn))))
+          (sort-by fdnstr (strokes-cached fdn))))
 
 (defn white-bad-strokes-nondeterministic
   "Bad stroke w.r.t. abduction (non-deterministic): A stroke (#i) is
@@ -111,11 +136,11 @@
                             (black? fdn n)
                             (every? (fn [s2] (white? fdn s2)) (fdnin fdn n))
                             (< priority out-priority))]
-              (when (white? fdn s)
+              #_(when (white? fdn s)
                 (trace (format "white-bad-strokes-nondeterministic: Considering stroke %s (priority %d, out-priority %d)"
                                s priority out-priority)))
               bad?))
-          (sort-by fdnstr (strokes fdn))))
+          (sort-by fdnstr (strokes-cached fdn))))
 
 (defn white-bad-nodes
   "Bad node w.r.t. abduction: A node (#i) is white but is pointed to
@@ -135,7 +160,7 @@
                                (and (black? fdn s)
                                     (< priority (fdnpriority fdn s))))
                              outs)))))
-          (sort-by fdnstr (nodes fdn))))
+          (sort-by fdnstr (nodes-cached fdn))))
 
 (defn spread-color
   [fdn strategy]
@@ -171,16 +196,28 @@
           (assert-black fdn choice)
           (assert-white fdn choice))))))
 
+(defn clear-cache
+  "Clears cache internal to FDN of nodes/strokes that have changed
+  color recently, as these and their neighbors are the only
+  nodes/strokes we need to examine for possible color changes."
+  [fdn]
+  (dissoc fdn :cache))
+
+(defn enable-cache
+  [fdn]
+  (assoc fdn :cache {:strokes #{} :nodes #{}}))
+
 (defn contract
   [fdn nodes & {:keys [strategy] :or {strategy default-strategy}}]
   (assert (sequential? nodes))
   (assert fdn)
   (status "\n\n*** Contracting by" nodes)
   (let [fdn-priority (inc-priority-counter fdn)
-        fdn-asserted (reduce assert-white fdn-priority nodes)]
+        fdn-cache (enable-cache fdn-priority)
+        fdn-asserted (reduce assert-white fdn-cache nodes)]
     (loop [fdn-colored fdn-asserted]
       (if (check-color-axioms fdn-colored)
-        fdn-colored
+        (clear-cache fdn-colored)
         (recur (spread-color fdn-colored strategy))))))
 
 (defn abduce
@@ -189,11 +226,12 @@
   (assert fdn)
   (status "\n\n*** Abducing by" nodes)
   (let [fdn-priority (inc-priority-counter fdn)
-        fdn-asserted-non-initial (reduce assert-black fdn-priority
-                                         (filter #(not (initial? fdn-priority %)) nodes))
+        fdn-cache (enable-cache fdn-priority)
+        fdn-asserted-non-initial (reduce assert-black fdn-cache
+                                         (filter #(not (initial? fdn-cache %)) nodes))
         fdn-asserted-initial (reduce assert-black-initial fdn-asserted-non-initial
                                      (filter #(initial? fdn-asserted-non-initial %) nodes))]
     (loop [fdn-colored fdn-asserted-initial]
       (if (check-color-axioms fdn-colored)
-        fdn-colored
+        (clear-cache fdn-colored)
         (recur (spread-color fdn-colored strategy))))))

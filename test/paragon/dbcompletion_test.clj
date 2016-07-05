@@ -49,5 +49,4 @@
         fdn-oilfield-1 (time (abduce fdn-oilfield-places ["Country:Albania"]))
         _ (prn (believed fdn-oilfield-1))]
     #_(visualize fdn-small-1)
-    
     ))
