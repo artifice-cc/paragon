@@ -121,11 +121,11 @@
 
 (defn fdnout
   [fdn stroke-or-node]
-  (graph/neighbors (:graph fdn) stroke-or-node))
+  (graph/successors (:graph fdn) stroke-or-node))
 
 (defn fdnin
   [fdn stroke-or-node]
-  (graph/incoming (:graph fdn) stroke-or-node))
+  (graph/predecessors (:graph fdn) stroke-or-node))
 
 (defn fdnpriority
   [fdn stroke-or-node]
@@ -151,7 +151,7 @@
 (defn degree
   [fdn stroke-or-node]
   (+ (graph/in-degree (:graph fdn) stroke-or-node)
-     (graph/degree (:graph fdn) stroke-or-node)))
+     (graph/out-degree (:graph fdn) stroke-or-node)))
 
 (defn in-degree
   [fdn stroke-or-node]
@@ -159,7 +159,7 @@
 
 (defn out-degree
   [fdn stroke-or-node]
-  (graph/degree (:graph fdn) stroke-or-node))
+  (graph/out-degree (:graph fdn) stroke-or-node))
 
 (defn believed
   "Returns black nodes."

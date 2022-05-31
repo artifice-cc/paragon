@@ -122,7 +122,7 @@
                           (let [fdn-black (reduce (fn [fdn n-or-s] (assert-color fdn n-or-s :black))
                                                  fdn (concat (nodes fdn) (strokes fdn)))
                                 non-bottom-leaf-nodes (filter #(and (not= :bottom %)
-                                                                    (empty? (graph/neighbors (:graph fdn-black) %)))
+                                                                    (empty? (graph/successors (:graph fdn-black) %)))
                                                               (nodes fdn-black))
                                 non-bottom-nodes (filter #(not= :bottom %)
                                                          (nodes fdn-black))

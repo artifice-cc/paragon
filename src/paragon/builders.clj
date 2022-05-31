@@ -214,7 +214,7 @@
                                           fdn node-group2))
                                 fdn node-group1)))
                     fdn paired)
-        top-nodes (filter (fn [n] (empty? (graph/incoming (:graph fdn2) n)))
+        top-nodes (filter (fn [n] (empty? (graph/predecessors (:graph fdn2) n)))
                           (nodes fdn2))
         fdn-premises (reduce (fn [fdn n] (exists-just fdn [(format "s%s" n)] n))
                             fdn2 top-nodes)
